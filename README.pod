@@ -1,0 +1,131 @@
+=head1 JSONSL
+
+JSON Stateful (or Simple, or Stacked) Lexer
+
+=head1 Why another (and another) JSON parser?
+
+I took inspiration from some of the uses of I<YAJL>, which looked
+quite nice, but whose build system seemed unusable, source horribly
+mangled, and grown beyond its original design. In other words, I saw
+it as a bunch of cruft.
+
+Instead of bothering to spend a few days figuring out how to use it,
+I came to a conclusion that the tasks I needed (simple token
+notifications coupled with some kind of state shift detection), I could
+do with a simple, small, ANSI C embeddable source file.
+
+I am still not sure if I<YAJL> provides the featureset of I<JSONSL>, but
+I'm guessing I've got at least I<some> innovation.
+
+I<JSONSL>
+
+Inspiration was also taken from Joyent's B<http-parser> project, which
+seems to use a similar, embeddable, and simple model.
+
+Here's a quick featureset
+
+=over
+
+=item Stateful
+
+Maintains state about current descent/recursion/nesting level
+Furthermore, you can access information about 'lower' stacks
+as long as they are activ.
+
+=item Callback oriented, selectively
+
+Invokes callbacks for all sorts of events, but you can control
+which kind of events you are interested in receiving without
+writing a ton of wrapper stubs
+
+=item Non-Buffering
+
+This doesn't buffer, copy, or allocate any data. The only allocation
+overhead is during the initialization of the parser, in which the
+initial stack structures are initialized
+
+=item Simple
+
+Just a C source file, and a corresponding header file. ANSI C.
+
+=back
+
+The rest of this documentation needs work
+
+=head1 Details
+
+=head2 Terminology
+
+Because the JSON spec is quite confusing in its terminology, especially
+when we want to map it to a different model, here is a listing of the
+terminology used here.
+
+I will use I<element>, I<object>, I<nest> interchangeably. They all
+refer to some form of atomic unit as far as JSON is concerned.
+
+I will use the term I<hash> for those things which look like C<{"foo":"bar"}>,
+and refer to its contents as I<keys> and I<values>
+
+I will use the term I<list> for those things which look like C<["hello", "byebye"]>,
+and their contents as I<list elements> or I<array elements> explicitly
+
+
+=head2 Model
+
+JSONSL gives you some basic events about I<state> and I<nesting> events.
+
+A I<state> change is when a given I<nesting> begins or ends: for example
+the string:
+
+ Level 0
+    {
+
+    Level 1
+
+        Level 2
+            "ABC"
+        :
+        Level 2
+            "XYZ"
+        ,
+
+    Level 1
+
+        [
+        Level 2
+
+            {
+            Level 3
+
+                Level 4
+                "Foo":"Bar"
+
+            Level 3
+            }
+        Level 2
+        ]
+    Level 1
+    }
+
+=over
+
+=item The Stack
+
+JSONSL's basic object type is the C<struct jsonsl_nest_st> which may be thought
+of as a stack frame.
+
+The nest contains information about its JSON type,
+the position in the input when it was first created, and the position in the
+input where it last re-gained control.
+
+Stacks can regain control by having an inner stack return (just like in your
+programs).
+
+Stacks are valid and will persist in the parser until they have themselves
+'returned' - meaning when their closing tokens have been encountered.
+
+This allows for some rather powerful manipulation and extraction of smaller
+JSON objects from a larger JSON stream using a high-performance and simple
+C-interface
+
+
