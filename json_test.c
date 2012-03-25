@@ -3,12 +3,13 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <assert.h>
 
 
 void fmt_level(const char *buf, size_t nbuf, int levels)
 {
-    char *c = buf;
+    const char *c = buf;
     int ii;
     for (ii = 0; ii < levels; ii++) {
         putchar('\t');
@@ -27,81 +28,119 @@ void fmt_level(const char *buf, size_t nbuf, int levels)
     putchar('\n');
 }
 
-void nest_callback(jsonsl_t jsn,
-                   jsonsl_state_t state,
-                   struct jsonsl_nest_st *nest,
+void state_callback(jsonsl_t jsn,
+                   jsonsl_action_t action,
+                   struct jsonsl_state_st *state,
                    const char *buf)
 {
-    /* We are called here with the jsn object, the state (BEGIN or END),
-     * the 'nest' object, which contains information about the level of
+    /* We are called here with the jsn object, the state (PUSH or POP),
+     * the 'state' object, which contains information about the level of
      * nesting we are descending into/ascending from, and a pointer to the
      * start position of the detectin of this nesting
      */
+    /*
+    printf("@%-5lu L%d %c%s\n",
+            jsn->pos,
+            state->level,
+            action,
+            jsonsl_strtype(state->type));
+            */
 
-    printf("at byte %d: Got nest callback, nesting=%d state=%c, T='%c'\n",
-            jsn->pos, nest->level, state, nest->type);
-    if (state == JSONSL_STATE_END) {
-        size_t nest_len = nest->pos_cur - nest->pos_begin;
+    if (action == JSONSL_ACTION_POP) {
+        size_t state_len = state->pos_cur - state->pos_begin;
 
-        char *buf_begin = buf - nest_len;
-        printf("Item closed, %d bytes long\n", nest_len);
-        fmt_level(buf_begin, nest_len, nest->level);
+        const char *buf_begin = buf - state_len;
     }
 }
 
 int error_callback(jsonsl_t jsn,
                    jsonsl_error_t err,
-                   struct jsonsl_nest_st *nest,
+                   struct jsonsl_state_st *state,
                    char *errat)
 {
     /* Error callback. In theory, this can return a true value
      * and maybe 'correct' and seek ahead of the buffer, and try to
      * do some correction.
      */
-    printf("Got parse error at '%c'\n", *errat);
-    printf("Error is %d\n", err);
-    printf("Remaining text: %s\n", errat);
+    fprintf(stderr, "Got parse error at '%c', pos %lu\n", *errat, jsn->pos);
+    fprintf(stderr, "Error is %s\n", jsonsl_strerror(err));
+    fprintf(stderr, "Remaining text: %s\n", errat);
     abort();
     return 0;
 }
 
-int main(void)
+
+void parse_single_file(const char *path)
 {
-    char buf[8092];
+    char *buf, *bufp;
+    struct stat sb;
+    int status;
     size_t nread = 0;
     int fd;
     jsonsl_t jsn;
 
-    fd = open("txt", O_RDONLY);
-    assert(fd >= 0);
+    /* open our file */
+    fd = open(path, O_RDONLY);
+    if (fd == -1) {
+        perror(path);
+        return;
+    }
+
+    status = fstat(fd, &sb);
+    assert(status == 0);
+    assert(sb.st_size);
+    assert(sb.st_size < 0x1000000);
+    buf = malloc(sb.st_size);
+    bufp = buf;
+
 
     /* Declare that we will support up to 512 nesting levels.
      * Each level of nesting requires about ~40 bytes (allocated at initialization)
      * to maintain state information.
      */
-    jsn = jsonsl_new(512);
+    jsn = jsonsl_new(0x2000);
 
     /* Set up our error callbacks (to be called when an error occurs)
      * and a nest callback (when a level changes in 'nesting')
      */
     jsn->error_callback = error_callback;
-    jsn->nest_callback = nest_callback;
+    jsn->action_callback = state_callback;
 
     /* Declare that we're intertested in receiving callbacks about
      * json 'Object' and 'List' types.
      */
-
-    jsn->call_OBJECT = 1;
-    jsn->call_LIST = 1;
-
+    jsonsl_enable_all_callbacks(jsn);
     /* read into the buffer */
 
     /**
      * To avoid recomputing offsets and relative positioning,
      * we will maintain the buffer, but this is not strictly required.
      */
-    nread = read(fd, buf, 8092);
-    jsonsl_feed(jsn, buf, nread);
+
+    while ( (nread = read(fd, bufp, 4096)) > 0) {
+        jsonsl_feed(jsn, bufp, nread);
+        bufp += nread;
+    }
+
     jsonsl_destroy(jsn);
+    free(buf);
+}
+
+int main(int argc, char **argv)
+{
+    int ii;
+    if (getenv("JSONSL_QUIET_TESTS")) {
+        freopen("/dev/null", "w", stdout);
+    }
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s FILES..\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    for (ii = 1; ii < argc && argv[ii]; ii++) {
+        fprintf(stderr, "==== %-40s ====\n", argv[ii]);
+        parse_single_file(argv[ii]);
+    }
+
     return 0;
 }

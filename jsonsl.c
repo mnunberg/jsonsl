@@ -3,11 +3,13 @@
 
 jsonsl_t jsonsl_new(int nlevels)
 {
-    struct jsonsl_st *jsn = malloc(
-            sizeof(*jsn) +
-            (nlevels * sizeof(struct jsonsl_nest_st)));
+    struct jsonsl_st *jsn =
+            calloc(1, sizeof (*jsn) +
+                    ( (nlevels-1) * sizeof (struct jsonsl_state_st) )
+            );
 
     jsn->levels_max = nlevels;
+    jsn->max_callback_level = -1;
     jsonsl_reset(jsn);
     return jsn;
 }
@@ -23,7 +25,7 @@ void jsonsl_reset(jsonsl_t jsn)
     jsn->expecting = 0;
 
     for (ii = 0; ii < jsn->levels_max; ii++) {
-        memset(jsn->nests + ii, 0, sizeof(struct jsonsl_nest_st));
+        memset(jsn->stack + ii, 0, sizeof(struct jsonsl_state_st));
     }
 }
 
@@ -33,63 +35,77 @@ void jsonsl_destroy(jsonsl_t jsn)
 }
 
 void
-jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
+jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 {
 
 #define INVOKE_ERROR(eb) \
-        if (jsn->error_callback(jsn, JSONSL_ERROR_##eb, nest, (char*)c)) { \
-            goto GT_AGAIN; \
-        } \
-        return;
+    if (jsn->error_callback(jsn, JSONSL_ERROR_##eb, state, (char*)c)) { \
+        goto GT_AGAIN; \
+    } \
+    return;
 
-#define NEST_DESCEND \
+#define STACK_PUSH \
     if (jsn->level == jsn->levels_max) { \
-        jsn->error_callback(jsn, JSONSL_ERROR_LEVELS_EXCEEDED, nest, (char*)c); \
+        jsn->error_callback(jsn, JSONSL_ERROR_LEVELS_EXCEEDED, state, (char*)c); \
         return; \
     } \
     jsn->level++; \
-    nest = jsn->nests + jsn->level; \
-    nest->serial++; \
-    nest->complete = 0; \
-    nest->level = jsn->level; \
-    nest->pos_begin = jsn->pos; \
+    state = jsn->stack + jsn->level; \
+    state->ignore_callback = jsn->stack[jsn->level-1].ignore_callback; \
+    state->level = jsn->level; \
+    state->pos_begin = jsn->pos;
 
-#define NEST_ASCEND_NOPOS \
-    nest->pos_cur = jsn->pos; \
+#define STACK_POP_NOPOS \
+    state->pos_cur = jsn->pos; \
     jsn->level--; \
-    nest = jsn->nests + jsn->level;
+    state = jsn->stack + jsn->level;
 
 
-#define NEST_ASCEND \
-    NEST_ASCEND_NOPOS; \
-    nest->pos_cur = jsn->pos;
+#define STACK_POP \
+    STACK_POP_NOPOS; \
+    state->pos_cur = jsn->pos;
 
-#define CALLBACK(T, state) \
-        if (jsn->call_##T) { \
-            jsn->nest_callback(jsn, JSONSL_STATE_##state, nest, c); \
-        }
+#define SPECIAL_MAYBE_POP \
+    if (state->type == JSONSL_T_SPECIAL) { \
+        CALLBACK(SPECIAL, POP); \
+        STACK_POP; \
+        jsn->expecting = 0; \
+    }
 
-    const char *c = bytes;
-    int tryagain = 0;
-    struct jsonsl_nest_st *nest = jsn->nests + jsn->level;
+#define CALLBACK(T, action) \
+    if (jsn->call_##T && \
+            jsn->max_callback_level > state->level && \
+            state->ignore_callback == 0) { \
+        \
+        if (jsn->action_callback_##action) { \
+            jsn->action_callback_##action(jsn, JSONSL_ACTION_##action, state, c); \
+        } else if (jsn->action_callback) { \
+            jsn->action_callback(jsn, JSONSL_ACTION_##action, state, c); \
+        } \
+    }
+
+    const jsonsl_char_t *c = bytes;
+    struct jsonsl_state_st *state = jsn->stack + jsn->level;
+    jsn->base = bytes;
 
     while (nbytes) {
 
-        /* Ignore whatever is next in the escape */
+        /* Special escape handling for some stuff */
         if (jsn->in_escape) {
             jsn->in_escape = 0;
+            if (*c == 'u') {
+                CALLBACK(UESCAPE, UESCAPE);
+                if (jsn->return_UESCAPE) {
+                    return;
+                }
+            }
             goto GT_NEXT;
         }
 
         GT_AGAIN:
         /* Ignore whitespace */
         if (*c <= 0x20) {
-            if (nest->type == JSONSL_T_SPECIAL) {
-                /* let it be known that the special type has completed */
-                CALLBACK(SPECIAL, END);
-                NEST_ASCEND;
-                jsn->expecting = ',';
-            }
+            SPECIAL_MAYBE_POP;
             goto GT_NEXT;
         }
 
@@ -97,7 +113,7 @@ jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
 
             /* Escape */
         case '\\':
-            if (nest->type != JSONSL_T_STRING) {
+            if (! (state->type == JSONSL_T_STRING || state->type == JSONSL_T_HKEY) ) {
                 INVOKE_ERROR(ESCAPE_OUTSIDE_STRING);
             }
 
@@ -106,27 +122,29 @@ jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
 
             /* Beginning or end of string */
         case '"':
+            /* Cannot have a numeric/boolean/null after/before a string */
+            if (state->type == JSONSL_T_SPECIAL) {
+                INVOKE_ERROR(STRAY_TOKEN);
+            }
         {
-            struct jsonsl_nest_st *nest_last = jsn->nests + (jsn->level -1);;
-
-            nest->pos_cur = jsn->pos;
+            state->pos_cur = jsn->pos;
             jsn->can_insert = 0;
 
-            switch (nest->type) {
+            switch (state->type) {
 
                 /* the end of a string or hash key */
                 case JSONSL_T_STRING:
-                    CALLBACK(STRING, END);
-                    NEST_ASCEND;
+                    CALLBACK(STRING, POP);
+                    STACK_POP;
                     goto GT_NEXT;
                 case JSONSL_T_HKEY:
-                    CALLBACK(HKEY, END);
-                    NEST_ASCEND;
+                    CALLBACK(HKEY, POP);
+                    STACK_POP;
                     goto GT_NEXT;
 
                 case JSONSL_T_OBJECT:
-                    nest->nelem++;
-                    if ( (nest->nelem-1) % 2 ) {
+                    state->nelem++;
+                    if ( (state->nelem-1) % 2 ) {
                         /* Odd, this must be a hash value */
                         if (jsn->tok_last != ':') {
                             INVOKE_ERROR(MISSING_TOKEN);
@@ -134,9 +152,9 @@ jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
                         assert(jsn->tok_last == ':');
                         jsn->expecting = ','; /* Can't figure out what to expect next */
 
-                        NEST_DESCEND;
-                        nest->type = JSONSL_T_STRING;
-                        CALLBACK(STRING, BEGIN);
+                        STACK_PUSH;
+                        state->type = JSONSL_T_STRING;
+                        CALLBACK(STRING, PUSH);
 
                     } else {
                         /* hash key */
@@ -147,23 +165,23 @@ jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
                         jsn->expecting = ':';
                         jsn->can_insert = 1;
 
-                        NEST_DESCEND;
-                        nest->type = JSONSL_T_HKEY;
-                        CALLBACK(HKEY, BEGIN);
+                        STACK_PUSH;
+                        state->type = JSONSL_T_HKEY;
+                        CALLBACK(HKEY, PUSH);
                     }
                     goto GT_NEXT;
 
                 case JSONSL_T_LIST:
-                    nest->nelem++;
-                    NEST_DESCEND;
-                    nest->type = JSONSL_T_STRING;
+                    state->nelem++;
+                    STACK_PUSH;
+                    state->type = JSONSL_T_STRING;
                     jsn->expecting = ',';
-                    CALLBACK(STRING, BEGIN);
+                    CALLBACK(STRING, PUSH);
                     goto GT_NEXT;
                 default:
                     INVOKE_ERROR(STRING_OUTSIDE_CONTAINER);
                     break;
-                } /* switch(nest->type) */
+                } /* switch(state->type) */
             break;
         }
 
@@ -174,7 +192,7 @@ jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
 
 
         /* ignore string content */
-        if (nest->type == JSONSL_T_STRING || nest->type == JSONSL_T_HKEY) {
+        if (state->type == JSONSL_T_STRING || state->type == JSONSL_T_HKEY) {
             goto GT_NEXT;
         }
 
@@ -182,15 +200,16 @@ jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
         case ':':
         case ',':
 
-            if (*c == ',' && nest->type == JSONSL_T_SPECIAL) {
-                /* End of special type */
-                CALLBACK(SPECIAL, END);
-                NEST_ASCEND;
-            } else if (jsn->expecting != *c) {
+            if (*c == ',') {
+                SPECIAL_MAYBE_POP;
+                jsn->expecting = ','; /* hack */
+            }
+
+            if (jsn->expecting != *c) {
                 INVOKE_ERROR(STRAY_TOKEN);
             }
 
-            if (nest->type == JSONSL_T_OBJECT && *c == ',') {
+            if (state->type == JSONSL_T_OBJECT && *c == ',') {
                 /* end of hash value, expect a string as a hash key */
                 jsn->expecting = '"';
             }
@@ -205,49 +224,55 @@ jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
             if (!jsn->can_insert) {
                 INVOKE_ERROR(CANT_INSERT);
             }
-            nest->nelem++;
+            state->nelem++;
 
-            NEST_DESCEND(jsn, nest, c);
+            STACK_PUSH;
             /* because the constants match the opening delimiters, we can do this: */
-            nest->type = *c;
-            nest->pos_begin = jsn->pos;
-            nest->nelem = 0;
+            state->type = *c;
+            state->pos_begin = jsn->pos;
+            state->nelem = 0;
             jsn->can_insert = 1;
             if (*c == '{') {
                 /* If we're a hash, we expect a key first, which is quouted */
                 jsn->expecting = '"';
             }
             if (*c == JSONSL_T_OBJECT) {
-                CALLBACK(OBJECT, BEGIN);
+                CALLBACK(OBJECT, PUSH);
             } else {
-                CALLBACK(LIST, BEGIN);
+                CALLBACK(LIST, PUSH);
             }
             goto GT_NEXT;
 
             /* closing of list or object */
         case '}':
         case ']':
-            /* cannot insert after a closing object/list */
+            SPECIAL_MAYBE_POP;
             jsn->can_insert = 0;
             jsn->level--;
-
+            jsn->expecting = ',';
             if (*c == ']') {
-                CALLBACK(LIST, END);
+                if (state->type != '[') {
+                    INVOKE_ERROR(BRACKET_MISMATCH);
+                }
+                CALLBACK(LIST, POP);
             } else {
-                CALLBACK(OBJECT, END);
+                if (state->type != '{') {
+                    INVOKE_ERROR(BRACKET_MISMATCH);
+                }
+                CALLBACK(OBJECT, POP);
             }
-            nest = jsn->nests + jsn->level;
-            nest->pos_cur = jsn->pos;
+            state = jsn->stack + jsn->level;
+            state->pos_cur = jsn->pos;
             goto GT_NEXT;
 
         default:
             /* special */
-            if (nest->type != JSONSL_T_SPECIAL) {
-                nest->nelem++;
+            if (state->type != JSONSL_T_SPECIAL) {
+                state->nelem++;
 
-                NEST_DESCEND;
-                nest->type = JSONSL_T_SPECIAL;
-                CALLBACK(SPECIAL, BEGIN);
+                STACK_PUSH;
+                state->type = JSONSL_T_SPECIAL;
+                CALLBACK(SPECIAL, PUSH);
             }
             goto GT_NEXT;
         }
@@ -257,4 +282,25 @@ jsonsl_feed(jsonsl_t jsn, const char *bytes, size_t nbytes)
         jsn->pos++;
         nbytes--;
     }
+}
+
+const char* jsonsl_strerror(jsonsl_error_t err)
+{
+#define X(t) \
+    if (err == JSONSL_ERROR_##t) \
+        return #t;
+    JSONSL_XERR;
+#undef X
+    return "<UNKNOWN_ERROR>";
+}
+
+const char *jsonsl_strtype(jsonsl_type_t type)
+{
+#define X(o,c) \
+    if (type == JSONSL_T_##o) \
+        return #o;
+    JSONSL_XTYPE
+#undef X
+    return "UNKNOWN TYPE";
+
 }

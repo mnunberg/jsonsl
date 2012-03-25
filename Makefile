@@ -1,14 +1,29 @@
+LIBJSONSL_DIR=$(shell pwd)
+LDFLAGS=-L$(LIBJSONSL_DIR) -Wl,-rpath=$(LIBJSONSL_DIR) -ljsonsl
+CFLAGS=-Wall -ggdb3 -O3 -std=c89 -pedantic -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC
+
+export CFLAGS
+export LDFLAGS
 
 all: json_test libjsonsl.so
 
-CFLAGS=-Wall -ggdb3 -O0
+.PHONY: examples
+examples:
+	$(MAKE) -C $@
+
 
 json_test: json_test.c libjsonsl.so
-	$(CC) $(CFLAGS) $< -o $@ -I. -L. -Wl,-rpath=$(shell pwd) -ljsonsl
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+share: json_samples.tgz
+	tar xzf $^
+
+check: json_test share
+	JSONSL_QUIET_TESTS=1 ./json_test share/*
 
 libjsonsl.so: jsonsl.c
-	$(CC) -g -ggdb3 -shared -fPIC -o $@ $^
+	$(CC) $(CFLAGS) -g -ggdb3 -shared -fPIC -o $@ $^
 
 clean:
 	rm -f *.o json_test *.so
-
+	rm -r share

@@ -2,7 +2,7 @@
 
 JSON Stateful (or Simple, or Stacked) Lexer
 
-=head1 Why another (and another) JSON parser?
+=head1 Why another (and yet another) JSON lexer?
 
 I took inspiration from some of the uses of I<YAJL>, which looked
 quite nice, but whose build system seemed unusable, source horribly
@@ -32,6 +32,14 @@ Maintains state about current descent/recursion/nesting level
 Furthermore, you can access information about 'lower' stacks
 as long as they are activ.
 
+=item Decoupling Object Graph from Data
+
+JSONSL abstracts the object graph from the actual (and usually
+more CPU-intensive) work of actually populating higher level
+structures such as "hashes" and "arrays" with "decoded" and
+"meaningful" values. Using this, one can implement an on-demand
+type of conversion.
+
 =item Callback oriented, selectively
 
 Invokes callbacks for all sorts of events, but you can control
@@ -60,7 +68,7 @@ Because the JSON spec is quite confusing in its terminology, especially
 when we want to map it to a different model, here is a listing of the
 terminology used here.
 
-I will use I<element>, I<object>, I<nest> interchangeably. They all
+I will use I<element>, I<object>, I<state> interchangeably. They all
 refer to some form of atomic unit as far as JSON is concerned.
 
 I will use the term I<hash> for those things which look like C<{"foo":"bar"}>,
@@ -72,10 +80,57 @@ and their contents as I<list elements> or I<array elements> explicitly
 
 =head2 Model
 
-JSONSL gives you some basic events about I<state> and I<nesting> events.
+=head3 States
 
-A I<state> change is when a given I<nesting> begins or ends: for example
-the string:
+A state represents a JSON element, this can be a
+a hash (C<T_OBJECT>), array (C<T_LIST>), hash key
+(C<T_HKEY>), string (C<T_STRING>), or a 'special' value (C<T_SPECIAL>)
+which should be either a numeric value, or one of C<true, false, null>.
+
+A state comprises and maintains the following information
+
+=over
+
+=item Type
+
+This merely states what type it is - as one of the C<JSONSL_T_*> constants
+mentioned above
+
+=item Positioning
+
+This contains positioning information mapping the location of the element
+as an offset relative to the input stream. When a state begins, its I<start>
+position is set. Whenever control returns back to the state, its I<current>
+position is updated and set to the point in the stream when the return
+occured
+
+=item Extended Information
+
+For non-scalar state types, information regarding the number of children
+contained is stored.
+
+=item User Data
+
+This is a simple void* pointer, and allows you to associate your own data
+with a given state
+
+=back
+
+=head3 Stack
+
+A stack consists of multiple states. When a state begins, it is I<pushed>
+to the stack, and when the state terminates, it is I<popped> from the stack
+and returns control to the previous stack state.
+
+When a state is popped, the contained information regarding positioning and
+children is complete, and it is therefore possible to retrieve the entire
+element in its byte-stream.
+
+Once a state has been popped, it is considered invalid (though it is still
+valid during the callback).
+
+Below is a diagram of a sample JSON stream annotated with stack/state
+information.
 
  Level 0
     {
@@ -107,25 +162,33 @@ the string:
     Level 1
     }
 
-=over
+=head1 USING
 
-=item The Stack
+The header file C<jsonsl.h> contains the API. Read it.
 
-JSONSL's basic object type is the C<struct jsonsl_nest_st> which may be thought
-of as a stack frame.
+As an additional note, you can 'extend' the state structure
+(thereby eliminating the need to allocate extra pointers for
+the C<void *data> field) by defining the C<JSONSL_STATE_USER_FIELDS>
+macro to expand to additonal struct fields.
 
-The nest contains information about its JSON type,
-the position in the input when it was first created, and the position in the
-input where it last re-gained control.
+This is assumed as the default behavior - and should work when
+you compile your project with C<jsonsl.c> directly.
 
-Stacks can regain control by having an inner stack return (just like in your
-programs).
+If you wish to use the 'generic' mode, make sure to
+C<#define> or C<-D> the C<JSONSL_STATE_GENERIC> macro.
 
-Stacks are valid and will persist in the parser until they have themselves
-'returned' - meaning when their closing tokens have been encountered.
+=head2 UNICODE
 
-This allows for some rather powerful manipulation and extraction of smaller
-JSON objects from a larger JSON stream using a high-performance and simple
-C-interface
+While JSONSL does not support unicode directly (it does not
+decode \uxxx escapes, nor does it care about any non-ascii
+characters), you can compile JSONSL using the C<JSONSL_USE_WCHAR>
+macro. This will make jsonsl iterate over C<wchar_t> characters
+instead of the good 'ole C<char>. Of course you would need to
+handle processing the stream correctly to make sure the multibyte
+stream was complete.
 
+=head1 AUTHOR AND COPYRIGHT
 
+Copyright (C) 2012 M. Nunberg.
+
+See C<LICENSE> for license information.
