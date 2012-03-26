@@ -32,18 +32,22 @@ typedef char jsonsl_char_t;
 #define JSONSL_STATE_USER_FIELDS
 #endif /* JSONSL_STATE_GENERIC */
 
+#define JSONSL_API
+
 
 #define JSONSL_MAX_LEVELS 512
 
 struct jsonsl_st;
 typedef struct jsonsl_st *jsonsl_t;
 
+#define JSONSL_Tf_STRINGY 0x80
+
 #define JSONSL_XTYPE \
-    X(STRING, '"') \
+    X(STRING, '"'|JSONSL_Tf_STRINGY) \
+    X(HKEY, '#'|JSONSL_Tf_STRINGY) \
     X(OBJECT, '{') \
     X(LIST, '[') \
     X(SPECIAL, '^') \
-    X(HKEY, '#') \
     X(UESCAPE, 'u')
 
 typedef enum {
@@ -247,6 +251,7 @@ struct jsonsl_st {
  *
  * @param nlevels maximum recursion depth
  */
+JSONSL_API
 jsonsl_t jsonsl_new(int nlevels);
 
 /**
@@ -256,6 +261,7 @@ jsonsl_t jsonsl_new(int nlevels);
  * @param bytes new data to be fed
  * @param nbytes size of new data
  */
+JSONSL_API
 void jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes);
 
 /**
@@ -265,6 +271,7 @@ void jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes);
  *
  * @param jsn the lexer
  */
+JSONSL_API
 void jsonsl_reset(jsonsl_t jsn);
 
 /**
@@ -272,6 +279,7 @@ void jsonsl_reset(jsonsl_t jsn);
  *
  * @param jsn the lexer
  */
+JSONSL_API
 void jsonsl_destroy(jsonsl_t jsn);
 
 /**
@@ -280,6 +288,7 @@ void jsonsl_destroy(jsonsl_t jsn);
  * @param jsn the lexer
  * @param cur the current nest, which should be a struct jsonsl_nest_st
  */
+JSONSL_API
 #define jsonsl_last_state(jsn, cur) \
     (cur->level > 1 ) \
     ? (jsn->stack + (cur->level-1)) \
@@ -291,6 +300,7 @@ void jsonsl_destroy(jsonsl_t jsn);
  * anything special but helps avoid some boilerplate.
  * This does not touch the UESCAPE callbacks or flags.
  */
+JSONSL_API
 #define jsonsl_enable_all_callbacks(jsn) \
     jsn->call_HKEY = 1; \
     jsn->call_STRING = 1; \
@@ -303,7 +313,9 @@ void jsonsl_destroy(jsonsl_t jsn);
  * of the error or type, respectively. They will never
  * return NULL
  */
+JSONSL_API
 const char* jsonsl_strerror(jsonsl_error_t err);
+JSONSL_API
 const char* jsonsl_strtype(jsonsl_type_t jt);
 
 #endif /* JSONSL_H_ */

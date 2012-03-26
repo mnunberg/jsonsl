@@ -1,12 +1,16 @@
+#include <jsonsl.h>
+#include <glib.h>
+
 #define _XTYPE_ALL \
-    X(TYPE_LIST) \
-    X(TYPE_HASH) \
-    X(TYPE_BOOLEAN) \
-    X(TYPE_INTEGER) \
-    X(TYPE_STRING)
+    X(LIST) \
+    X(HASH) \
+    X(BOOLEAN) \
+    X(INTEGER) \
+    X(STRING)
 
 typedef enum {
-#define X(t) t,
+#define X(t) \
+    TYPE_ ##t ,
     _XTYPE_ALL
     TYPE_UNKNOWN
 #undef X

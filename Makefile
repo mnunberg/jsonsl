@@ -1,6 +1,9 @@
 LIBJSONSL_DIR=$(shell pwd)
 LDFLAGS=-L$(LIBJSONSL_DIR) -Wl,-rpath=$(LIBJSONSL_DIR) -ljsonsl
-CFLAGS=-Wall -ggdb3 -O3 -std=c89 -pedantic -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC
+CFLAGS=\
+	   -Wall -std=gnu89 -pedantic \
+	   -O3 -ggdb3 \
+	   -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC
 
 export CFLAGS
 export LDFLAGS

@@ -89,7 +89,6 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
     jsn->base = bytes;
 
     while (nbytes) {
-
         /* Special escape handling for some stuff */
         if (jsn->in_escape) {
             jsn->in_escape = 0;
@@ -107,6 +106,13 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         if (*c <= 0x20) {
             SPECIAL_MAYBE_POP;
             goto GT_NEXT;
+        } else if (*c > 0x7f) {
+            if (state->type & JSONSL_Tf_STRINGY) {
+                /* Must be a string. */
+                goto GT_NEXT;
+            } else {
+                INVOKE_ERROR(GARBAGE_TRAILING);
+            }
         }
 
         switch (*c) {
@@ -149,7 +155,6 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                         if (jsn->tok_last != ':') {
                             INVOKE_ERROR(MISSING_TOKEN);
                         }
-                        assert(jsn->tok_last == ':');
                         jsn->expecting = ','; /* Can't figure out what to expect next */
 
                         STACK_PUSH;
@@ -192,7 +197,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
 
         /* ignore string content */
-        if (state->type == JSONSL_T_STRING || state->type == JSONSL_T_HKEY) {
+        if (state->type & JSONSL_Tf_STRINGY) {
             goto GT_NEXT;
         }
 

@@ -1,5 +1,3 @@
-#include <jsonsl.h>
-#include <glib.h>
 #include <assert.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -7,16 +5,100 @@
 #include <sys/types.h>
 #include "glib-datatypes.h"
 
-int error_callback(jsonsl_t jsn,
-                    jsonsl_error_t err,
-                    struct jsonsl_state_st *state,
-                    char *at)
+static int MaxOutputLevel = 20;
+static int MaxDescentLevel = 20;
+static gboolean DumpIncremental = FALSE;
+static gboolean DumpProgress = TRUE;
+static gboolean DumpCompletion = TRUE;
+static gboolean DumpStringContents = TRUE;
+static gboolean DumpHashKeys = TRUE;
+static gboolean DumpAll = FALSE;
+static gboolean Silent = FALSE;
+
+static void pad_level(int level) {
+    for (; level > 1; level--) {
+        putchar(' ');
+    }
+}
+
+static void dump_hash(struct hash_st *hash, int level);
+static void dump_list(struct list_st *list, int level);
+static void dump_string(struct string_st *str, int level);
+
+
+static void dump_element(struct element_st *root, int level)
 {
-    fprintf(stderr, "Got error at pos %lu: %s\n",
-            jsn->pos, jsonsl_strerror(err));
-    printf("Remaining text: %s\n", at);
-    abort();
-    return 0;
+    char *typestr = "UNKNOWN";
+    if (!root) {
+        return;
+    }
+    if (MaxOutputLevel < level) {
+        return;
+    }
+#define X(t) \
+    if (root->type == TYPE_##t) \
+        typestr = #t;
+    _XTYPE_ALL
+#undef X
+
+    pad_level(level);
+    printf("<%s", typestr);
+
+    switch(root->type) {
+    case TYPE_STRING:
+        dump_string((struct string_st*)root, level+1);
+        break;
+    case TYPE_LIST:
+        dump_list((struct list_st*)root, level+1);
+        break;
+    case TYPE_HASH:
+        dump_hash((struct hash_st*)root, level+1);
+        break;
+    default:
+        fprintf(stderr, "Unknown type!\n");
+        abort();
+        break;
+    }
+    pad_level(level);
+    printf("</%s>\n", typestr);
+}
+
+static void dump_string(struct string_st *str, int level)
+{
+    printf(" len=\"%lu\">", strlen(str->data));
+    if (DumpStringContents) {
+        printf("%s", str->data);
+    }
+    printf("\n");
+}
+
+static void dump_list(struct list_st *list, int level)
+{
+    GList *node;
+    printf(">\n");
+    for (node = list->data; node; node = node->next) {
+        dump_element((struct element_st*)node->data, level);
+    }
+}
+
+static void dump_hash_iterfunc(gpointer key, gpointer value, void *data)
+{
+    int level = *(int*)data;
+    level++;
+    printf("\n");
+    pad_level(level);
+    printf("<KEY len=\"%lu\"", strlen((char*)key+1));
+    if (DumpHashKeys) {
+        printf(" key=\"%s\"", (char*)key+1);
+    }
+    printf("/>\n");
+    dump_element((struct element_st*)value, level+1);
+}
+
+static void dump_hash(struct hash_st *hash, int level)
+{
+    printf(">\n");
+    g_hash_table_foreach(hash->data, dump_hash_iterfunc, &level);
 }
 
 static inline
@@ -40,6 +122,9 @@ dump_action_state(jsonsl_t jsn,
 {
     int ii;
     size_t pos = (action == JSONSL_ACTION_POP) ? state->pos_cur : state->pos_begin;
+    if (!DumpProgress) {
+        return;
+    }
     for (ii = 1; ii < state->level; ii++) {
         printf("   ");
     }
@@ -78,6 +163,7 @@ create_new_element(jsonsl_t jsn,
         hash->pending_key = buf;
         str->parent = NULL;
         str->data = buf;
+        str->type = TYPE_STRING;
         state->data = (struct element_st*)str;
         return; /* nothing to do here */
     }
@@ -125,17 +211,24 @@ cleanup_closing_element(jsonsl_t jsn,
     struct element_st *elem = (struct element_st*)state->data;
     struct string_st *str = (struct string_st*)elem;
     assert(state);
-    dump_action_state(jsn, action, state);
-
-    if (elem->type != TYPE_STRING) {
-        return;
-    }
-    if (*at != '"') {
-        return;
+    if (!DumpIncremental) {
+        dump_action_state(jsn, action, state);
     }
 
-    *(char*)at = '\0';
-    str->data++;
+    if (elem->type == TYPE_STRING) {
+        if (*at != '"') {
+            return;
+        }
+
+        *(char*)at = '\0';
+        str->data++;
+    }
+
+    if (DumpIncremental) {
+        struct objgraph_st *objgraph = (struct objgraph*)jsn->data;
+        printf("Incremental dump at input position %lu\n", jsn->pos);
+        dump_element(objgraph->root, 0);
+    }
 }
 
 void nest_callback_initial(jsonsl_t jsn,
@@ -172,6 +265,18 @@ void nest_callback_initial(jsonsl_t jsn,
     jsn->action_callback_POP = cleanup_closing_element;
 }
 
+int error_callback(jsonsl_t jsn,
+                    jsonsl_error_t err,
+                    struct jsonsl_state_st *state,
+                    char *at)
+{
+    fprintf(stderr, "Got error at pos %lu: %s\n",
+            jsn->pos, jsonsl_strerror(err));
+    printf("Remaining text: %s\n", at);
+    abort();
+    return 0;
+}
+
 
 static void parse_one_file(const char *path)
 {
@@ -203,7 +308,7 @@ static void parse_one_file(const char *path)
     jsn->action_callback_POP = NULL;
     jsn->error_callback = error_callback;
     jsn->data = &graph;
-    jsn->max_callback_level = 32;
+    jsn->max_callback_level = MaxDescentLevel;
 
     memset(&graph, 0, sizeof(&graph));
 
@@ -215,11 +320,56 @@ static void parse_one_file(const char *path)
             break;
         }
     }
+
+    if (DumpCompletion) {
+        dump_element(graph.root, 0);
+    }
 }
 
+static GOptionEntry CLIOptions[] = {
+{"dump-completion", 'C', 0, G_OPTION_ARG_NONE, &DumpCompletion, "Dump graph upon completion", NULL },
+{"dump-incremental", 'i', 0, G_OPTION_ARG_NONE, &DumpIncremental, "Dump graph incrementally", NULL },
+{"output-level", 'L', 0, G_OPTION_ARG_INT, &MaxOutputLevel, "Maximum output level", "LEVEL"},
+{"descent-level", 'R', 0, G_OPTION_ARG_INT, &MaxDescentLevel, "Maximum recursion level for graph", "LEVEL" },
+{"dump-strings", 's', 0, G_OPTION_ARG_NONE, &DumpStringContents, "Display string values", NULL },
+{"dump-keys", 'k', 0,   G_OPTION_ARG_NONE, &DumpHashKeys, "Display dictionary keys", NULL },
+{"dump-progresss", 'p', 0, G_OPTION_ARG_NONE, &DumpProgress, "Dump abbreviated progress (incrementally)", NULL },
+{"verbose", 'v', 0,     G_OPTION_ARG_NONE, &DumpAll, "Be verbose. dump everything", NULL },
+{"quiet", 'q', 0,       G_OPTION_ARG_NONE, &Silent, "Quiet, don't output anything", NULL },
+{ NULL }
+};
 
 int main(int argc, char **argv) {
     int ii;
+    GError *error = NULL;
+    GOptionContext *context;
+
+    context = g_option_context_new("FILES..");
+    g_option_context_add_main_entries(context, CLIOptions, NULL);
+    if (!g_option_context_parse(context, &argc, &argv, &error)) {
+        g_print("Option parsing failed: %s\n", error->message);
+        exit(EXIT_FAILURE);
+    }
+
+    {
+        int set_all = -1;
+        if (DumpAll) {
+            set_all = 1;
+        } else if (Silent) {
+            set_all = 0;
+        }
+        if (set_all >= 0) {
+            DumpIncremental = set_all;
+            DumpCompletion = set_all;
+            DumpStringContents = set_all;
+            DumpHashKeys = set_all;
+            DumpProgress = set_all;
+        }
+        if (DumpIncremental) {
+            DumpProgress = FALSE;
+        }
+    }
+
     if (argc < 2) {
         fprintf(stderr, "USAGE: %s FILES...\n", argv[0]);
         exit(EXIT_FAILURE);
