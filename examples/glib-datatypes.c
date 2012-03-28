@@ -297,7 +297,7 @@ static void parse_one_file(const char *path)
 
     status = fstat(fd, &sb);
     assert(status == 0);
-    assert(sb.st_size < 0x100000);
+    assert(sb.st_size < 0x1000000);
     buf = malloc(sb.st_size);
 
     jsn = jsonsl_new(0x1000);

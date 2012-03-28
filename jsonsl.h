@@ -13,13 +13,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <wchar.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
 
 #ifdef JSONSL_USE_WCHAR
-#include <wchar.h>
 typedef jsonsl_char_t wchar_t;
+typedef jsonsl_uchar_t unsigned wchar_t;
 #else
 typedef char jsonsl_char_t;
+typedef unsigned char jsonsl_uchar_t;
 #endif /* JSONSL_USE_WCHAR */
 
 #if (!defined(JSONSL_STATE_GENERIC)) && (!defined(JSONSL_STATE_USER_FIELDS))
@@ -40,16 +45,26 @@ typedef char jsonsl_char_t;
 struct jsonsl_st;
 typedef struct jsonsl_st *jsonsl_t;
 
+typedef struct jsonsl_jpr_st* jsonsl_jpr_t;
+
+/**
+ * This flag is true when AND'd against a type whose value
+ * must be in "quoutes" i.e. T_HKEY and T_STRING
+ */
 #define JSONSL_Tf_STRINGY 0x80
 
+/**
+ * Constant representing the special JSON types.
+ * The values are special and aid in speed (the OBJECT and LIST
+ * values are the char literals of their openings)
+ */
 #define JSONSL_XTYPE \
-    X(STRING, '"'|JSONSL_Tf_STRINGY) \
-    X(HKEY, '#'|JSONSL_Tf_STRINGY) \
-    X(OBJECT, '{') \
-    X(LIST, '[') \
-    X(SPECIAL, '^') \
-    X(UESCAPE, 'u')
-
+    X(STRING,   '"'|JSONSL_Tf_STRINGY) \
+    X(HKEY,     '#'|JSONSL_Tf_STRINGY) \
+    X(OBJECT,   '{') \
+    X(LIST,     '[') \
+    X(SPECIAL,  '^') \
+    X(UESCAPE,  'u')
 typedef enum {
 #define X(o, c) \
     JSONSL_T_##o = c,
@@ -58,14 +73,41 @@ typedef enum {
 #undef X
 } jsonsl_type_t;
 
+/**
+ * Subtypes for T_SPECIAL. We define them as flags
+ * because more than one type can be applied to a
+ * given object, though in practice we only scan the first
+ * character of the 'special' type, so it's only possible
+ * to infer a single flag.
+ */
+
+#define JSONSL_XSPECIAL \
+    X(NONE, 0) \
+    X(SIGNED,       1<<0) \
+    X(UNSIGNED,     1<<1) \
+    X(TRUE,         1<<2) \
+    X(FALSE,        1<<3) \
+    X(NULL,         1<<4) \
+    X(FLOAT,        1<<5) \
+    X(EXPONENT,     1<<6)
+typedef enum {
+#define X(o,b) \
+    JSONSL_SPECIALf_##o = b,
+    JSONSL_XSPECIAL
+#undef X
+    JSONSL_SPECIALf_UNKNOWN
+} jsonsl_special_t;
+
+
+/**
+ * These are the various types of stack (or other) events
+ * which will trigger a callback.
+ */
 #define JSONSL_XACTION \
     X(PUSH, '+') \
     X(POP, '-') \
     X(UESCAPE, 'U') \
     X(ERROR, '!')
-
-
-
 typedef enum {
 #define X(a,c) \
     JSONSL_ACTION_##a = c,
@@ -74,9 +116,15 @@ typedef enum {
 #undef X
 } jsonsl_action_t;
 
+
+/**
+ * Various errors which may be thrown while parsing JSON
+ */
 #define JSONSL_XERR \
 /* Trailing garbage characters */ \
     X(GARBAGE_TRAILING) \
+/* We were expecting a 'special' (numeric, true, false, null) */ \
+    X(SPECIAL_EXPECTED) \
 /* Found a stray token */ \
     X(STRAY_TOKEN) \
 /* We were expecting a token before this one */ \
@@ -94,7 +142,17 @@ typedef enum {
 /* Current level exceeds limit specified in constructor */ \
     X(LEVELS_EXCEEDED) \
 /* Got a } as a result of an opening [ or vice versa */ \
-    X(BRACKET_MISMATCH)
+    X(BRACKET_MISMATCH) \
+/* The following are for JPR Stuff */ \
+    \
+/* Found a literal '%' but it was only followed by a single valid hex digit */ \
+    X(PERCENT_BADHEX) \
+/* jsonpointer URI is malformed '/' */ \
+    X(JPR_BADPATH) \
+/* Duplicate slash */ \
+    X(JPR_DUPSLASH) \
+/* No leading root */ \
+    X(JPR_NOROOT)
 
 typedef enum {
 #define X(e) \
@@ -104,24 +162,45 @@ typedef enum {
     JSONSL_ERROR_GENERIC
 } jsonsl_error_t;
 
-/* Structure for which to represent nesting */
+
+/**
+ * A state is a single level of the stack
+ */
 struct jsonsl_state_st {
+
     /**
      * Position offset variables. These are relative to jsn->pos.
      * pos_begin is the position at which this state was first pushed
      * to the stack. pos_cur is the position at which return last controlled
      * to this state (i.e. an immediate child state was popped from it).
      */
+
+    /**
+     * The position at which this state was first PUSHed
+     */
     size_t pos_begin;
+
+    /**
+     * The position at which any immediate child was last POPped
+     */
     size_t pos_cur;
 
-    /* type of nesting */
+    /**
+     * The JSON object type
+     */
     jsonsl_type_t type;
 
-    /* level of recursion into nesting */
+    /**
+     * Level of recursion into nesting. This is mainly a convenience
+     * variable, as this can technically be deduced from the lexer's
+     * level parameter (though the logic is not that simple)
+     */
     unsigned int level;
 
-    /* how many elements in the object/list.
+    /*TODO: merge the following two members in a union */
+
+    /**
+     * how many elements in the object/list.
      * For objects (hashes), an element is either
      * a key or a value. Thus for one complete pair,
      * nelem will be 2.
@@ -129,25 +208,75 @@ struct jsonsl_state_st {
      */
     unsigned int nelem;
 
-    /*
+    /** If this element is special, then its extended type is here */
+    jsonsl_special_t special_flags;
+
+    /**
      * Useful for an opening nest, this will prevent a callback from being
      * invoked on this item or any of its children
      */
     int ignore_callback;
 
-    /* put anything you want here */
+    /**
+     * Put anything you want here. if JSONSL_STATE_USER_FIELDS is here, then
+     * the macro expansion happens here
+     */
 #ifndef JSONSL_STATE_GENERIC
     JSONSL_STATE_USER_FIELDS
 #else
+
+    /**
+     * Otherwise, this is a simple void * pointer for anything yoiu want
+     */
     void *data;
 #endif /* JSONSL_STATE_USER_FIELDS */
 };
 
+/*
+ * So now we need some special structure for keeping the
+ * JPR info in sync. Preferrably all in a single block
+ * of memory (there's no need for separate allocations.
+ * So we will define a 'table' with the following layout
+ *
+ * Level    nPosbl  JPR1_last   JPR2_last   JPR3_last
+ *
+ * 0        1       NOMATCH     POSSIBLE    POSSIBLE
+ * 1        0       NOMATCH     NOMATCH     COMPLETE
+ * [ table ends here because no further path is possible]
+ *
+ * Where the JPR..n corresponds to the number of JPRs
+ * requested, and nPosble is a quick flag to determine
+ *
+ * the number of possibilities. In the future this might
+ * be made into a proper 'jump' table,
+ *
+ * Since we always mark JPRs from the higher levels descending
+ * into the lower ones, a prospective child match would first
+ * look at the parent table to check the possibilities, and then
+ * see which ones were possible..
+ *
+ * Thus, the size of this blob would be (and these are all ints here)
+ * nLevels * nJPR * 2.
+ *
+ * the 'Width' of the table would be nJPR*2, and the 'height' would be
+ * nlevels
+ */
+
+/**
+ * This is called when a stack change ocurs.
+ *
+ * @param jsn The lexer
+ * @param action The type of action, this can be PUSH or POP
+ * @param state A pointer to the stack currently affected by the action
+ * @param at A pointer to the position of the input buffer which triggered
+ * this action.
+ */
 typedef void (*jsonsl_stack_callback)(
-        jsonsl_t,
-        jsonsl_action_t,
-        struct jsonsl_state_st*,
-        const jsonsl_char_t *);
+        jsonsl_t jsn,
+        jsonsl_action_t action,
+        struct jsonsl_state_st* state,
+        const jsonsl_char_t *at);
+
 
 /**
  * This is called when an error is encountered.
@@ -155,87 +284,114 @@ typedef void (*jsonsl_stack_callback)(
  * with whitespace). If you think you have corrected the error, you
  * can return a true value, in which case the parser will backtrack
  * and try again.
+ *
+ * @param jsn The lexer
+ * @param error The error which was thrown
+ * @param state the current state
+ * @param a pointer to the position of the input buffer which triggered
+ * the error. Note that this is not const, this is because you have the
+ * possibility of modifying the character in an attempt to correct the
+ * error
+ *
+ * @return zero to bail, nonzero to try again (this only makes sense if
+ * the input buffer has been modified by this callback)
  */
 typedef int (*jsonsl_error_callback)(
-        jsonsl_t,
+        jsonsl_t jsn,
         jsonsl_error_t error,
-        struct jsonsl_state_st *,
-        jsonsl_char_t *);
+        struct jsonsl_state_st* state,
+        jsonsl_char_t *at);
 
 struct jsonsl_st {
-    /* Public, read-only */
+    /** Public, read-only */
 
-    /* This is the current level of the stack */
+    /** This is the current level of the stack */
     int level;
 
-    /* This is the current position, relative to the beginning
+    /**
+     * This is the current position, relative to the beginning
      * of the stream.
      */
     size_t pos;
 
-    /* This variable is set to the buffer passed to the last
-     * call of jsonsl_feed
-     */
+    /** This is the 'bytes' variable passed to feed() */
     const jsonsl_char_t *base;
-    /**
-     * The following callbacks are invoked when stack changes occur.
-     * JSONSL will first check for specific 'POP' and 'PUSH' callbacks,
-     * and then check for the generic 'action_callback'.
-     *
-     * Callbacks for pushes are done _after_ the state has been pushed.
-     * This means the level parameters reflect the new state.
-     *
-     * Callbacks for pops are done _before_ the state is to be popped,
-     * Once the callback returns, the level counter is decremented and
-     * the state popped.
-     */
-    jsonsl_stack_callback action_callback;
+
+    /** Callback invoked for PUSH actions */
     jsonsl_stack_callback action_callback_PUSH;
+
+    /** Callback invoked for POP actions */
     jsonsl_stack_callback action_callback_POP;
 
-    /**
-     * This is the maximum level for which a callback is to be invoked
-     */
+    /** Default callback for any action, if neither PUSH or POP callbacks are defined */
+    jsonsl_stack_callback action_callback;
+
+    /** Do not invoke callbacks for objects deeper than this level */
     unsigned int max_callback_level;
-    /**
-     * This is an error callback and should be defined. If a parse error happens
-     * and you do not have an error handler installed, then your application
-     * will crash.
-     */
+
+    /** The error callback. Invoked when an error happens. Should not be NULL */
     jsonsl_error_callback error_callback;
 
     /* these are boolean flags you can modify. You will be called
      * about notification for each of these types if the corresponding
      * variable is true.
      */
+
+    /**
+     * @name Callback Booleans.
+     * These determine whether a callback is to be invoked for certain types of objects
+     * @{*/
+
+    /** Boolean flag to enable or disable the invokcation for events on this type*/
     int call_SPECIAL;
     int call_OBJECT;
     int call_LIST;
     int call_STRING;
     int call_HKEY;
+    /*@}*/
 
-    /* This is a special callback, and is invoked as so
-     * callback(jsn, JSONSL_ACTION_UESCAPE, state, at);
-     * and is called when a '\uf00d' is encountered. *at == 'u'.
+    /**
+     * @name u-Escape handling
+     * Special handling for the \\u-f00d type sequences. These are meant
+     * to be translated back into the corresponding octet(s).
+     * A special callback (if set) is invoked with *at=='u'. An application
+     * may wish to temporarily suspend parsing and handle the 'u-' sequence
+     * internally (or not).
      */
+
+     /*@{*/
+
+    /** Callback to be invoked for a u-escape */
     jsonsl_stack_callback action_callback_UESCAPE;
+
+    /** Boolean flag, whether to invoke the callback */
     int call_UESCAPE;
-    /* This flag goes in conjunction with call_UESCAPE, and says
-     * that we shall return when a '\uf00d' or similar is encountered.
-     * At this point, the application may want to gobble/chomp the next
-     * four bytes, or store it in its own stack for further processing.
+
+    /** Boolean flag, whether we should return after encountering a u-escape:
+     * the callback is invoked and then we return if this is true
      */
     int return_UESCAPE;
+    /*@}*/
 
-    /* do whatever you want with this */
+    /** Put anything here */
     void *data;
 
-    /* Private lexer variables. Don't even look at this. */
+    /*@{*/
+    /** Private */
     int in_escape;
     char expecting;
     char tok_last;
     int can_insert;
     unsigned int levels_max;
+
+#ifndef JSONSL_NO_JPR
+    unsigned int jpr_count;
+    jsonsl_jpr_t *jprs;
+
+    /* Root pointer for JPR matching information */
+    int *jpr_root;
+#endif /* JSONSL_NO_JPR */
+    /*@}*/
 
     /**
      * This is the stack. Its upper bound is levels_max, or the
@@ -247,7 +403,7 @@ struct jsonsl_st {
 
 
 /**
- * Creates a new lexer object, with capacity for recursion
+ * Creates a new lexer object, with capacity for recursion up to nlevels
  *
  * @param nlevels maximum recursion depth
  */
@@ -288,7 +444,6 @@ void jsonsl_destroy(jsonsl_t jsn);
  * @param jsn the lexer
  * @param cur the current nest, which should be a struct jsonsl_nest_st
  */
-JSONSL_API
 #define jsonsl_last_state(jsn, cur) \
     (cur->level > 1 ) \
     ? (jsn->stack + (cur->level-1)) \
@@ -300,7 +455,6 @@ JSONSL_API
  * anything special but helps avoid some boilerplate.
  * This does not touch the UESCAPE callbacks or flags.
  */
-JSONSL_API
 #define jsonsl_enable_all_callbacks(jsn) \
     jsn->call_HKEY = 1; \
     jsn->call_STRING = 1; \
@@ -317,5 +471,204 @@ JSONSL_API
 const char* jsonsl_strerror(jsonsl_error_t err);
 JSONSL_API
 const char* jsonsl_strtype(jsonsl_type_t jt);
+
+/* This macro just here for editors to do code folding */
+#ifndef JSONSL_NO_JPR
+
+/**
+ * @name JSON Pointer API
+ *
+ * JSONPointer API. This isn't really related to the lexer (at least not yet)
+ * JSONPointer provides an extremely simple specification for providing
+ * locations within JSON objects. We will extend it a bit and allow for
+ * providing 'wildcard' characters by which to be able to 'query' the stream.
+ *
+ * See http://tools.ietf.org/html/draft-pbryan-zyp-json-pointer-00
+ *
+ * Currently I'm implementing the 'single query' API which can only use a single
+ * query component. In the future I will integrate my yet-to-be-published
+ * Boyer-Moore-esque prefix searching implementation, in order to allow
+ * multiple paths to be merged into one for quick and efficient searching.
+ *
+ *
+ * JPR (as we'll refer to it within the source) can be used by splitting
+ * the components into mutliple sections, and incrementally 'track' each
+ * component. When JSONSL delivers a 'pop' callback for a string, or a 'push'
+ * callback for an object, we will check to see whether the index matching
+ * the component corresponding to the current level contains a match
+ * for our path.
+ *
+ * In order to do this properly, a structure must be maintained within the
+ * parent indicating whether its children are possible matches. This flag
+ * will be 'inherited' by call children which may conform to the match
+ * specification, and discarded by all which do not (thereby eliminating
+ * their children from inheriting it).
+ *
+ * A successful match is a complete one. One can provide multiple paths with
+ * multiple levels of matches e.g.
+ *  /foo/bar/baz/^/blah
+ *
+ *  @{
+ */
+
+/** The wildcard character */
+#define JSONSL_PATH_WILDCARD_CHAR '^'
+
+#define JSONSL_XMATCH \
+    X(COMPLETE,1) \
+    X(POSSIBLE,0) \
+    X(NOMATCH,-1)
+
+typedef enum {
+
+#define X(T,v) \
+    JSONSL_MATCH_##T = v,
+    JSONSL_XMATCH
+
+#undef X
+    JSONSL_MATCH_UNKNOWN
+} jsonsl_jpr_match_t;
+
+typedef enum {
+    JSONSL_PATH_STRING = 1,
+    JSONSL_PATH_WILDCARD,
+    JSONSL_PATH_NUMERIC,
+    JSONSL_PATH_ROOT,
+
+    /* Special */
+    JSONSL_PATH_INVALID = -1,
+    JSONSL_PATH_NONE = 0
+} jsonsl_jpr_type_t;
+
+struct jsonsl_jpr_component_st {
+    char *pstr;
+    /** if this is a numeric type, the number is 'cached' here */
+    unsigned long idx;
+    size_t len;
+    jsonsl_jpr_type_t ptype;
+};
+
+struct jsonsl_jpr_st {
+    /** Path components */
+    struct jsonsl_jpr_component_st *components;
+    size_t ncomponents;
+
+    /** Base of allocated string for components */
+    char *basestr;
+
+    /** The original match string. Useful for returning to the user */
+    char *orig;
+};
+
+
+
+/**
+ * Create a new JPR object.
+ *
+ * @param path the JSONPointer path specification.
+ * @param errp a pointer to a jsonsl_error_t. If this function returns NULL,
+ * then more details will be in this variable.
+ *
+ * @return a new jsonsl_jpr_t object, or NULL on error.
+ */
+JSONSL_API
+jsonsl_jpr_t jsonsl_jpr_new(const char *path, jsonsl_error_t *errp);
+
+/**
+ * Destroy a JPR object
+ */
+JSONSL_API
+void jsonsl_jpr_destroy(jsonsl_jpr_t jpr);
+
+/**
+ * Match a JSON object against a type and specific level
+ *
+ * @param jpr the JPR object
+ * @param parent_type the type of the parent (should be T_LIST or T_OBJECT)
+ * @param parent_level the level of the parent
+ * @param key the 'key' of the child. If the parent is an array, this should be
+ * empty.
+ * @param nkey - the length of the key. If the parent is an array (T_LIST), then
+ * this should be the current index.
+ *
+ * @return a status constant. This indicates whether a match was excluded, possible,
+ * or successful.
+ */
+JSONSL_API
+jsonsl_jpr_match_t jsonsl_jpr_match(jsonsl_jpr_t jpr,
+                                    jsonsl_type_t parent_type,
+                                    unsigned int parent_level,
+                                    const char *key, size_t nkey);
+
+
+/**
+ * Associate a set of JPR objects with a lexer instance.
+ * This should be called before the lexer has been fed any data (and
+ * behavior is undefined if you don't adhere to this).
+ *
+ * After using this function, you may subsequently call match_state() on
+ * given states (presumably from within the callbacks).
+ *
+ * Note that currently the first JPR is the quickest and comes
+ * pre-allocated with the state structure. Further JPR objects
+ * are chained.
+ *
+ * @param jsn The lexer
+ * @param jprs An array of jsonsl_jpr_t objects
+ * @param njprs How many elements in the jprs array.
+ */
+JSONSL_API
+void jsonsl_jpr_match_state_init(jsonsl_t jsn,
+                                 jsonsl_jpr_t *jprs,
+                                 size_t njprs);
+
+/**
+ * This follows the same semantics as the normal match,
+ * except we infer parent and type information from the relevant state objects.
+ * The match status (for all possible JPR objects) is set in the *out parameter.
+ *
+ * If a match has succeeded, then its JPR object will be returned. In all other
+ * instances, NULL is returned;
+ *
+ * @param jpr The jsonsl_jpr_t handle
+ * @param state The jsonsl_state_st which is a candidate
+ * @param key The hash key (if applicable, can be NULL if parent is list)
+ * @param nkey Length of hash key (if applicable, can be zero if parent is list)
+ * @param out A pointer to a jsonsl_jpr_match_t. This will be populated with
+ * the match result
+ *
+ * @return If a match was completed in full, then the JPR object containing
+ * the matching path will be returned. Otherwise, the return is NULL (note, this
+ * does not mean matching has failed, it can still be part of the match: check
+ * the out parameter).
+ */
+JSONSL_API
+jsonsl_jpr_t jsonsl_jpr_match_state(jsonsl_t jsn,
+                                    struct jsonsl_state_st *state,
+                                    const char *key,
+                                    size_t nkey,
+                                    jsonsl_jpr_match_t *out);
+
+
+/**
+ * Cleanup any memory allocated and any states set by
+ * match_state_init() and match_state()
+ * @param jsn The lexer
+ */
+JSONSL_API
+void jsonsl_jpr_match_state_cleanup(jsonsl_t jsn);
+
+/**
+ * Return a string representation of the match result returned by match()
+ */
+JSONSL_API
+const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match);
+
+/* @}*/
+#endif /* JSONSL_NO_JPR */
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif /* JSONSL_H_ */
