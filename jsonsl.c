@@ -6,7 +6,7 @@
 /* Predeclare the table. The actual table is in the end of this file */
 static jsonsl_special_t *Special_table;
 #define extract_special(c) \
-    Special_table[c & 0xff]
+    Special_table[(unsigned int)(c & 0xff)]
 
 JSONSL_API
 jsonsl_t jsonsl_new(int nlevels)
@@ -41,7 +41,9 @@ void jsonsl_reset(jsonsl_t jsn)
 JSONSL_API
 void jsonsl_destroy(jsonsl_t jsn)
 {
-    free(jsn);
+    if (jsn) {
+        free(jsn);
+    }
 }
 
 JSONSL_API
@@ -120,6 +122,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             goto GT_NEXT;
         } else if (*(jsonsl_uchar_t*)c > 0x7f) {
             if (state->type & JSONSL_Tf_STRINGY) {
+                state->special_flags = JSONSL_SPECIALf_NONASCII;
                 /* non-ascii, not a token. */
                 goto GT_NEXT;
             } else {
@@ -286,13 +289,15 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         default:
             /* special */
             if (state->type != JSONSL_T_SPECIAL) {
-                if (! (state->special_flags = extract_special(*c))) {
+                int special_flags = extract_special(*c);
+                if (!special_flags) {
                     INVOKE_ERROR(SPECIAL_EXPECTED);
                 }
 
                 state->nelem++;
                 STACK_PUSH;
                 state->type = JSONSL_T_SPECIAL;
+                state->special_flags = special_flags;
                 CALLBACK(SPECIAL, PUSH);
             }
             goto GT_NEXT;
@@ -335,12 +340,12 @@ const char *jsonsl_strtype(jsonsl_type_t type)
  *
  */
 #ifndef JSONSL_NO_JPR
-JSONSL_API
+static
 jsonsl_jpr_type_t
 populate_component(char *in,
-                       struct jsonsl_jpr_component_st *component,
-                       char **next,
-                       jsonsl_error_t *errp)
+                   struct jsonsl_jpr_component_st *component,
+                   char **next,
+                   jsonsl_error_t *errp)
 {
     unsigned long pctval;
     char *c = NULL, *outp = NULL, *end = NULL;
@@ -383,7 +388,7 @@ populate_component(char *in,
     /* Default, it's a string */
     ret = JSONSL_PATH_STRING;
     for (c = outp = in; c < end; c++, outp++) {
-        char *endptr, origc;
+        char origc;
         if (*c != '%') {
             goto GT_ASSIGN;
         }
@@ -404,7 +409,7 @@ populate_component(char *in,
         /* Temporarily null-terminate the characters */
         origc = *(c+3);
         *(c+3) = '\0';
-        pctval = strtoul(c+1, &endptr, 16);
+        pctval = strtoul(c+1, NULL, 16);
         *(c+3) = origc;
 
         *outp = pctval;
@@ -645,6 +650,11 @@ jsonsl_jpr_t jsonsl_jpr_match_state(jsonsl_t jsn,
     /* Jump and JPR tables for our own state and the parent state */
     int *jmptable, *pjmptable;
     int jmp_cur, ii, ourjmpidx;
+
+    if (!jsn->jpr_root) {
+        *out = JSONSL_MATCH_NOMATCH;
+        return NULL;
+    }
 
     pjmptable = jsn->jpr_root + (jsn->jpr_count * (state->level-1));
     jmptable = pjmptable + jsn->jpr_count;

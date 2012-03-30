@@ -37,8 +37,9 @@ typedef unsigned char jsonsl_uchar_t;
 #define JSONSL_STATE_USER_FIELDS
 #endif /* JSONSL_STATE_GENERIC */
 
+#ifndef JSONSL_API
 #define JSONSL_API
-
+#endif /* JSONSL_API */
 
 #define JSONSL_MAX_LEVELS 512
 
@@ -69,7 +70,9 @@ typedef enum {
 #define X(o, c) \
     JSONSL_T_##o = c,
     JSONSL_XTYPE
-    JSONSL_T_UNKNOWN = '?'
+    JSONSL_T_UNKNOWN = '?',
+    /* Abstract 'root' object */
+    JSONSL_T_ROOT = 0
 #undef X
 } jsonsl_type_t;
 
@@ -89,7 +92,8 @@ typedef enum {
     X(FALSE,        1<<3) \
     X(NULL,         1<<4) \
     X(FLOAT,        1<<5) \
-    X(EXPONENT,     1<<6)
+    X(EXPONENT,     1<<6) \
+    X(NONASCII,     1<<7)
 typedef enum {
 #define X(o,b) \
     JSONSL_SPECIALf_##o = b,
@@ -121,6 +125,7 @@ typedef enum {
  * Various errors which may be thrown while parsing JSON
  */
 #define JSONSL_XERR \
+    X(SUCCESS) \
 /* Trailing garbage characters */ \
     X(GARBAGE_TRAILING) \
 /* We were expecting a 'special' (numeric, true, false, null) */ \
@@ -463,6 +468,13 @@ void jsonsl_destroy(jsonsl_t jsn);
     jsn->call_LIST = 1;
 
 /**
+ * A macro which returns true if the current state object can
+ * have children. This means a list type or an object type.
+ */
+#define JSONSL_STATE_IS_CONTAINER(state) \
+        (state->type == JSONSL_T_OBJECT || state->type == JSONSL_T_LIST)
+
+/**
  * These two functions, dump a string representation
  * of the error or type, respectively. They will never
  * return NULL
@@ -512,7 +524,9 @@ const char* jsonsl_strtype(jsonsl_type_t jt);
  */
 
 /** The wildcard character */
+#ifndef JSONSL_PATH_WILDCARD_CHAR
 #define JSONSL_PATH_WILDCARD_CHAR '^'
+#endif /* WILDCARD_CHAR */
 
 #define JSONSL_XMATCH \
     X(COMPLETE,1) \

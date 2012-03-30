@@ -157,7 +157,7 @@ static void lexjpr(void)
     struct lexer_global_st global;
     jsonsl_t jsn;
     jsonsl_jpr_t jpr;
-    jpr = jsonsl_jpr_new("/foo/^/^", NULL);
+    jpr = jsonsl_jpr_new("/foo/^/1", NULL);
     assert(jpr);
     jsn = jsonsl_new(24);
     assert(jsn);
