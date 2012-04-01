@@ -32,6 +32,9 @@ check: json_test share jpr_test
 	JSONSL_QUIET_TESTS=1 ./json_test share/*
 	JSONSL_QUIET_TESTS=1 ./jpr_test
 
+bench: bench.c jsonsl.c
+	$(CC) $(CFLAGS) $^ -o $@
+
 libjsonsl.so: jsonsl.c
 	$(CC) $(CFLAGS) -shared -fPIC -o $@ $^
 
