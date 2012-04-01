@@ -148,6 +148,10 @@ typedef enum {
     X(LEVELS_EXCEEDED) \
 /* Got a } as a result of an opening [ or vice versa */ \
     X(BRACKET_MISMATCH) \
+/* We expected a key, but got something else instead */ \
+    X(HKEY_EXPECTED) \
+/* We got an illegal control character (bad whitespace or something) */ \
+    X(WEIRD_WHITESPACE) \
 /* The following are for JPR Stuff */ \
     \
 /* Found a literal '%' but it was only followed by a single valid hex digit */ \

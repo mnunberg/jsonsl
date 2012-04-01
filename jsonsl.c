@@ -3,10 +3,30 @@
 #include <limits.h>
 #include <ctype.h>
 
-/* Predeclare the table. The actual table is in the end of this file */
+/**
+ * This table (predeclared) contains characters which are recognized
+ * non-string values.
+ */
 static jsonsl_special_t *Special_table;
 #define extract_special(c) \
     Special_table[(unsigned int)(c & 0xff)]
+
+/**
+ * This table (predeclared) contains the tokens and other characters
+ * which signal the termination of the non-string values.
+ */
+static int *Special_Endings;
+#define is_special_end(c) \
+    Special_Endings[(unsigned int)c & 0xff]
+
+/**
+ * This table contains entries for the allowed whitespace
+ * as per RFC 4627
+ */
+static int *Allowed_Whitespace;
+#define is_allowed_whitespace(c) \
+    Allowed_Whitespace[(unsigned int)c & 0xff]
+
 
 JSONSL_API
 jsonsl_t jsonsl_new(int nlevels)
@@ -35,6 +55,7 @@ void jsonsl_reset(jsonsl_t jsn)
 
     for (ii = 0; ii < jsn->levels_max; ii++) {
         memset(jsn->stack + ii, 0, sizeof(struct jsonsl_state_st));
+        jsn->stack[ii].level = ii;
     }
 }
 
@@ -58,33 +79,38 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
     return;
 
 #define STACK_PUSH \
-    if (jsn->level == jsn->levels_max) { \
+    if (jsn->level >= (levels_max-1)) { \
         jsn->error_callback(jsn, JSONSL_ERROR_LEVELS_EXCEEDED, state, (char*)c); \
         return; \
     } \
-    jsn->level++; \
-    state = jsn->stack + jsn->level; \
+    state = jsn->stack + (++jsn->level); \
     state->ignore_callback = jsn->stack[jsn->level-1].ignore_callback; \
-    state->level = jsn->level; \
     state->pos_begin = jsn->pos;
 
 #define STACK_POP_NOPOS \
     state->pos_cur = jsn->pos; \
-    jsn->level--; \
-    state = jsn->stack + jsn->level;
+    state = jsn->stack + (--jsn->level);
 
 
 #define STACK_POP \
     STACK_POP_NOPOS; \
     state->pos_cur = jsn->pos;
 
+#define CALLBACK_AND_POP_NOPOS(T) \
+        state->pos_cur = jsn->pos; \
+        CALLBACK(T, POP); \
+        state = jsn->stack + (--jsn->level);
+
+#define CALLBACK_AND_POP(T) \
+        CALLBACK_AND_POP_NOPOS(T); \
+        state->pos_cur = jsn->pos;
+
 #define SPECIAL_MAYBE_POP \
     if (state->type == JSONSL_T_SPECIAL) { \
-        state->pos_cur = jsn->pos; \
-        CALLBACK(SPECIAL, POP); \
-        STACK_POP; \
+        CALLBACK_AND_POP(SPECIAL); \
         jsn->expecting = 0; \
     }
+
 
 #define CALLBACK(T, action) \
     if (jsn->call_##T && \
@@ -92,17 +118,26 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             state->ignore_callback == 0) { \
         \
         if (jsn->action_callback_##action) { \
-            jsn->action_callback_##action(jsn, JSONSL_ACTION_##action, state, c); \
+            jsn->action_callback_##action(jsn, JSONSL_ACTION_##action, state, (jsonsl_char_t*)c); \
         } else if (jsn->action_callback) { \
-            jsn->action_callback(jsn, JSONSL_ACTION_##action, state, c); \
+            jsn->action_callback(jsn, JSONSL_ACTION_##action, state, (jsonsl_char_t*)c); \
         } \
     }
 
-    const jsonsl_char_t *c = bytes;
+    /**
+     * Verifies that we are able to insert the (non-string) item into a hash.
+     */
+#define ENSURE_HVAL \
+    if (state->nelem % 2 == 0 && state->type == JSONSL_T_OBJECT) { \
+        INVOKE_ERROR(HKEY_EXPECTED); \
+    }
+
+    const jsonsl_uchar_t *c = (jsonsl_uchar_t*)bytes;
+    size_t levels_max = jsn->levels_max;
     struct jsonsl_state_st *state = jsn->stack + jsn->level;
     jsn->base = bytes;
 
-    while (nbytes) {
+    for (; nbytes; nbytes--, jsn->pos++, c++) {
         /* Special escape handling for some stuff */
         if (jsn->in_escape) {
             jsn->in_escape = 0;
@@ -116,99 +151,108 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         }
 
         GT_AGAIN:
-        /* Ignore whitespace */
-        if (*c <= 0x20) {
-            SPECIAL_MAYBE_POP;
-            goto GT_NEXT;
-        } else if (*(jsonsl_uchar_t*)c > 0x7f) {
-            if (state->type & JSONSL_Tf_STRINGY) {
-                state->special_flags = JSONSL_SPECIALf_NONASCII;
-                /* non-ascii, not a token. */
+        /**
+         * Several fast-tracks for common cases:
+         */
+        if (state->type & JSONSL_Tf_STRINGY) {
+            /**
+             * For a string we don't care about anything above 0x23 (0x22 == '"')
+             * and the backslash (0x5c)
+             */
+            if ( (*c >= 0x23 && *c != '\\') || (*c == 0x20) ) {
                 goto GT_NEXT;
-            } else {
-                INVOKE_ERROR(GARBAGE_TRAILING);
+            } else if (*c == '"') {
+                /* terminator */
+                goto GT_QUOTE;
+            } else if (*c < 0x20) {
+                /* unescaped whitespace */
+                INVOKE_ERROR(WEIRD_WHITESPACE);
             }
+        } else if (state->type == JSONSL_T_SPECIAL) {
+            if ( (*c >= 0x30 && *c < 0x40) || is_special_end(*c) == 0) {
+                /* Most common case. Inside a number */
+                goto GT_NEXT;
+            } else if (is_allowed_whitespace(*c)) {
+                /**
+                 * Note how we only check for the whitespace-subset of
+                 * special terminators. This because a 'special terminator'
+                 * can also have dual-purpose (except for whitespace, which
+                 * serves no other function).
+                 */
+                SPECIAL_MAYBE_POP;
+                goto GT_NEXT;
+            }
+        } else if (is_allowed_whitespace(*c)) {
+            /* So we're not special. Harmless insignificant whitespace
+             * passthrough
+             */
+            goto GT_NEXT;
         }
 
-        switch (*c) {
+        if (*c == '"') {
+            GT_QUOTE:
+            jsn->can_insert = 0;
+            switch (state->type) {
 
-            /* Escape */
-        case '\\':
+            /* the end of a string or hash key */
+            case JSONSL_T_STRING:
+                CALLBACK_AND_POP(STRING);
+                goto GT_NEXT;
+            case JSONSL_T_HKEY:
+                CALLBACK_AND_POP(HKEY);
+                goto GT_NEXT;
+
+            case JSONSL_T_OBJECT:
+                state->nelem++;
+                if ( (state->nelem-1) % 2 ) {
+                    /* Odd, this must be a hash value */
+                    if (jsn->tok_last != ':') {
+                        INVOKE_ERROR(MISSING_TOKEN);
+                    }
+                    jsn->expecting = ','; /* Can't figure out what to expect next */
+
+                    STACK_PUSH;
+                    state->type = JSONSL_T_STRING;
+                    CALLBACK(STRING, PUSH);
+
+                } else {
+                    /* hash key */
+                    if (jsn->expecting != '"') {
+                        INVOKE_ERROR(STRAY_TOKEN);
+                    }
+                    jsn->tok_last = 0;
+                    jsn->expecting = ':';
+
+                    STACK_PUSH;
+                    state->type = JSONSL_T_HKEY;
+                    CALLBACK(HKEY, PUSH);
+                }
+                goto GT_NEXT;
+
+            case JSONSL_T_LIST:
+                state->nelem++;
+                STACK_PUSH;
+                state->type = JSONSL_T_STRING;
+                jsn->expecting = ',';
+                CALLBACK(STRING, PUSH);
+                goto GT_NEXT;
+
+            case JSONSL_T_SPECIAL:
+                INVOKE_ERROR(STRAY_TOKEN);
+                break;
+
+            default:
+                INVOKE_ERROR(STRING_OUTSIDE_CONTAINER);
+                break;
+            } /* switch(state->type) */
+        } else if (*c == '\\') {
+        /* Escape */
             if (! (state->type == JSONSL_T_STRING || state->type == JSONSL_T_HKEY) ) {
                 INVOKE_ERROR(ESCAPE_OUTSIDE_STRING);
             }
-
             jsn->in_escape = 1;
             goto GT_NEXT;
-
-            /* Beginning or end of string */
-        case '"':
-            /* Cannot have a numeric/boolean/null after/before a string */
-            if (state->type == JSONSL_T_SPECIAL) {
-                INVOKE_ERROR(STRAY_TOKEN);
-            }
-        {
-            state->pos_cur = jsn->pos;
-            jsn->can_insert = 0;
-
-            switch (state->type) {
-
-                /* the end of a string or hash key */
-                case JSONSL_T_STRING:
-                    CALLBACK(STRING, POP);
-                    STACK_POP;
-                    goto GT_NEXT;
-                case JSONSL_T_HKEY:
-                    CALLBACK(HKEY, POP);
-                    STACK_POP;
-                    goto GT_NEXT;
-
-                case JSONSL_T_OBJECT:
-                    state->nelem++;
-                    if ( (state->nelem-1) % 2 ) {
-                        /* Odd, this must be a hash value */
-                        if (jsn->tok_last != ':') {
-                            INVOKE_ERROR(MISSING_TOKEN);
-                        }
-                        jsn->expecting = ','; /* Can't figure out what to expect next */
-
-                        STACK_PUSH;
-                        state->type = JSONSL_T_STRING;
-                        CALLBACK(STRING, PUSH);
-
-                    } else {
-                        /* hash key */
-                        if (jsn->expecting != '"') {
-                            INVOKE_ERROR(STRAY_TOKEN);
-                        }
-                        jsn->tok_last = 0;
-                        jsn->expecting = ':';
-                        jsn->can_insert = 1;
-
-                        STACK_PUSH;
-                        state->type = JSONSL_T_HKEY;
-                        CALLBACK(HKEY, PUSH);
-                    }
-                    goto GT_NEXT;
-
-                case JSONSL_T_LIST:
-                    state->nelem++;
-                    STACK_PUSH;
-                    state->type = JSONSL_T_STRING;
-                    jsn->expecting = ',';
-                    CALLBACK(STRING, PUSH);
-                    goto GT_NEXT;
-                default:
-                    INVOKE_ERROR(STRING_OUTSIDE_CONTAINER);
-                    break;
-                } /* switch(state->type) */
-            break;
-        }
-
-            /* return to switch(*c) */
-            default:
-                break; /* make eclipse happy */
-        } /* switch (*c) */
+        } /* " or \ */
 
 
         /* ignore string content */
@@ -244,12 +288,13 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             if (!jsn->can_insert) {
                 INVOKE_ERROR(CANT_INSERT);
             }
+
+            ENSURE_HVAL;
             state->nelem++;
 
             STACK_PUSH;
             /* because the constants match the opening delimiters, we can do this: */
             state->type = *c;
-            state->pos_begin = jsn->pos;
             state->nelem = 0;
             jsn->can_insert = 1;
             if (*c == '{') {
@@ -287,13 +332,28 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             goto GT_NEXT;
 
         default:
-            /* special */
+            /**
+             * Not a string, not a structural token, and not benign whitespace.
+             * Technically we should iterate over the character always, but since
+             * we are not doing full numerical/value decoding anyway (but only hinting),
+             * we only check upon entry.
+             */
             if (state->type != JSONSL_T_SPECIAL) {
                 int special_flags = extract_special(*c);
                 if (!special_flags) {
-                    INVOKE_ERROR(SPECIAL_EXPECTED);
+                    /**
+                     * Try to do some heuristics here anyway to figure out what kind of
+                     * error this is. The 'special' case is a fallback scenario anyway.
+                     */
+                    if (*c == '\0') {
+                        INVOKE_ERROR(FOUND_NULL_BYTE);
+                    } else if (*c < 0x20) {
+                        INVOKE_ERROR(WEIRD_WHITESPACE);
+                    } else {
+                        INVOKE_ERROR(SPECIAL_EXPECTED);
+                    }
                 }
-
+                ENSURE_HVAL;
                 state->nelem++;
                 STACK_PUSH;
                 state->type = JSONSL_T_SPECIAL;
@@ -304,9 +364,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         }
 
         GT_NEXT:
-        c++;
-        jsn->pos++;
-        nbytes--;
+        continue;
     }
 }
 
@@ -498,7 +556,7 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
         curidx = 1;
     }
 
-
+    path--; /*revert path to leading '/' */
     origlen = strlen(path) + 1;
     ret = malloc(sizeof(*ret));
     ret->components = components;
@@ -716,8 +774,13 @@ const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match)
 #endif /* JSONSL_WITH_JPR */
 
 /**
- * Character table for special lookups, generated by a little perl script I wrote
- * (can be found in srcutil)
+ * Character Table definitions.
+ * These were all generated via srcutil/genchartables.pl
+ */
+
+/**
+ * This table contains the beginnings of non-string
+ * allowable (bareword) values.
  */
 static jsonsl_special_t _special_table[0xff] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
@@ -748,3 +811,58 @@ static jsonsl_special_t _special_table[0xff] = {
         /* 0xf5 */ 0,0,0,0,0,0,0,0,0,0 /* 0xfe */
 };
 static jsonsl_special_t *Special_table = _special_table;
+
+/**
+ * Contains characters which signal the termination of any of the 'special' bareword
+ * values.
+ */
+static int _special_endings[0xff] = {
+        /* 0x00 */ 0,0,0,0,0,0,0,0,0, /* 0x08 */
+        /* 0x09 */ 1 /* <TAB> */, /* 0x09 */
+        /* 0x0a */ 1 /* <LF> */, /* 0x0a */
+        /* 0x0b */ 0,0, /* 0x0c */
+        /* 0x0d */ 1 /* <CR> */, /* 0x0d */
+        /* 0x0e */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
+        /* 0x20 */ 1 /* <SP> */, /* 0x20 */
+        /* 0x21 */ 0, /* 0x21 */
+        /* 0x22 */ 1 /* " */, /* 0x22 */
+        /* 0x23 */ 0,0,0,0,0,0,0,0,0, /* 0x2b */
+        /* 0x2c */ 1 /* , */, /* 0x2c */
+        /* 0x2d */ 0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x39 */
+        /* 0x3a */ 1 /* : */, /* 0x3a */
+        /* 0x3b */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5a */
+        /* 0x5b */ 1 /* [ */, /* 0x5b */
+        /* 0x5c */ 1 /* \ */, /* 0x5c */
+        /* 0x5d */ 1 /* ] */, /* 0x5d */
+        /* 0x5e */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x7a */
+        /* 0x7b */ 1 /* { */, /* 0x7b */
+        /* 0x7c */ 0, /* 0x7c */
+        /* 0x7d */ 1 /* } */, /* 0x7d */
+        /* 0x7e */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x9d */
+        /* 0x9e */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xbd */
+        /* 0xbe */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xdd */
+        /* 0xde */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xfd */
+        /* 0xfe */ 0 /* 0xfe */
+};
+static int *Special_Endings = _special_endings;
+
+/**
+ * Contains allowable whitespace.
+ */
+static int _allowed_whitespace[0xff] = {
+        /* 0x00 */ 0,0,0,0,0,0,0,0,0, /* 0x08 */
+        /* 0x09 */ 1 /* <TAB> */, /* 0x09 */
+        /* 0x0a */ 1 /* <LF> */, /* 0x0a */
+        /* 0x0b */ 0,0, /* 0x0c */
+        /* 0x0d */ 1 /* <CR> */, /* 0x0d */
+        /* 0x0e */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
+        /* 0x20 */ 1 /* <SP> */, /* 0x20 */
+        /* 0x21 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x40 */
+        /* 0x41 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x60 */
+        /* 0x61 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x80 */
+        /* 0x81 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xa0 */
+        /* 0xa1 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xc0 */
+        /* 0xc1 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xe0 */
+        /* 0xe1 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 /* 0xfe */
+};
+static int *Allowed_Whitespace = _allowed_whitespace;
