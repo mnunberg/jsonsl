@@ -3,17 +3,61 @@
 #
 use strict;
 use warnings;
+use Getopt::Long;
 
-my @defs;
-$defs[ord('-')] = 'JSONSL_SPECIALf_SIGNED';
-$defs[ord('t')] = 'JSONSL_SPECIALf_TRUE';
-$defs[ord('f')] = 'JSONSL_SPECIALf_FALSE';
-$defs[ord('n')] = 'JSONSL_SPECIALf_NULL';
-$defs[ord($_)]  = 'JSONSL_SPECIALf_UNSIGNED' for (0..9);
+my @tokdefs;
+$tokdefs[ord('-')] = 'JSONSL_SPECIALf_SIGNED';
+$tokdefs[ord('t')] = 'JSONSL_SPECIALf_TRUE';
+$tokdefs[ord('f')] = 'JSONSL_SPECIALf_FALSE';
+$tokdefs[ord('n')] = 'JSONSL_SPECIALf_NULL';
+$tokdefs[ord($_)]  = 'JSONSL_SPECIALf_UNSIGNED' for (0..9);
+
+my @strdefs;
+$strdefs[ord('\\')] = 1;
+$strdefs[ord('"')] = 1;
+
+#Tokens which terminate a 'special' sequence. Basically all JSON tokens
+#themselves
+my @special_end;
+{
+    my @toks = qw([ { } ] " : \\ );
+    push @toks, ',';
+    $special_end[ord($_)] = 1 for (@toks);
+}
+
+#RFC 4627 allowed whitespace
+my @wstable;
+foreach my $x (0x20, 0x09, 0xa, 0xd) {
+    $wstable[$x] = 1;
+    $special_end[$x] = 1;
+}
 
 my @lines;
 my $cur = { begin => 0, items => [], end => 0 };
 push @lines, $cur;
+
+my $Table;
+
+GetOptions(
+    'special' => \my $SpecialTable,
+    'strings' => \my $TokstrTable,
+    'special_end' => \my $SpecialEnd,
+    'whitespace' => \my $Whitespace,
+);
+
+unless ($SpecialTable || $TokstrTable || $SpecialEnd || $Whitespace) {
+    die ("Please specify --special, --special_end or --strings to select table");
+}
+
+if ($SpecialTable) {
+    $Table = \@tokdefs;
+} elsif ($SpecialEnd) {
+   $Table = \@special_end;
+} elsif ($Whitespace) {
+    $Table = \@wstable;
+} else {
+    $Table = \@strdefs;
+}
 
 my $i = 0;
 my $cur_col = 0;
@@ -49,11 +93,23 @@ sub add_special {
     $special_last = 1;
 }
 
-my $special_last = 0;
+$special_last = 0;
 for (; $i < 255; $i++) {
-    my $v = $defs[$i];
+    my $v = $Table->[$i];
     if (defined $v) {
-        $v = sprintf("$v /* %s */", chr($i));
+        my $char_pretty;
+        if ($i == 0xa) {
+            $char_pretty = '<LF>';
+        } elsif ($i == 0xd) {
+            $char_pretty = '<CR>';
+        } elsif ($i == 0x9) {
+           $char_pretty = '<TAB>';
+        } elsif ($i == 0x20) {
+           $char_pretty = '<SP>';
+        } else {
+            $char_pretty = chr($i);
+        }
+        $v = sprintf("$v /* %s */", $char_pretty);
         add_special($v);
     } else {
         add_to_grid(0);
