@@ -32,31 +32,53 @@ foreach my $x (0x20, 0x09, 0xa, 0xd) {
     $special_end[$x] = 1;
 }
 
+my @special_body;
+{
+    foreach my $x (0..9) {
+        $special_body[ord($x)] = 1;
+    }
+    foreach my $x ('E', 'e', 'a','l','s','u','-','+', '.') {
+        $special_body[ord($x)] = 1;
+    }
+}
+
+my @unescapes;
+$unescapes[ord('t')] = 0x09;
+$unescapes[ord('b')] = 0x08;
+$unescapes[ord('n')] = 0x20;
+$unescapes[ord('f')] = 0x0c;
+$unescapes[ord('r')] = 0x0d;
+
+
 my @lines;
 my $cur = { begin => 0, items => [], end => 0 };
 push @lines, $cur;
 
-my $Table;
-
-GetOptions(
-    'special' => \my $SpecialTable,
-    'strings' => \my $TokstrTable,
-    'special_end' => \my $SpecialEnd,
-    'whitespace' => \my $Whitespace,
+my %HMap = (
+    special => [ undef, \@tokdefs ],
+    strings => [ undef, \@strdefs ],
+    special_end => [ undef, \@special_end ],
+    special_body => [undef, \@special_body ],
+    whitespace => [ undef, \@wstable ],
+    unescapes => [undef, \@unescapes],
 );
 
-unless ($SpecialTable || $TokstrTable || $SpecialEnd || $Whitespace) {
-    die ("Please specify --special, --special_end or --strings to select table");
+my $Table;
+my %opthash;
+while (my ($optname,$optarry) = each %HMap) {
+    $opthash{$optname} = \$optarry->[0];
+}
+GetOptions(%opthash);
+
+while (my ($k,$v) = each %HMap) {
+    if ($v->[0]) {
+        $Table = $v->[1];
+        last;
+    }
 }
 
-if ($SpecialTable) {
-    $Table = \@tokdefs;
-} elsif ($SpecialEnd) {
-   $Table = \@special_end;
-} elsif ($Whitespace) {
-    $Table = \@wstable;
-} else {
-    $Table = \@strdefs;
+if (!$Table) {
+    die("Please specify one of: " . join(",", keys %HMap));
 }
 
 my $i = 0;
@@ -106,6 +128,10 @@ for (; $i < 255; $i++) {
            $char_pretty = '<TAB>';
         } elsif ($i == 0x20) {
            $char_pretty = '<SP>';
+        } elsif ($i == 0x08) {
+            $char_pretty = '<BS>';
+        } elsif ($i == 0x0c) {
+            $char_pretty = '<FF>';
         } else {
             $char_pretty = chr($i);
         }
