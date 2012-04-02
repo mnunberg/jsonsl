@@ -2,24 +2,17 @@ LIBJSONSL_DIR=$(shell pwd)
 LDFLAGS=-L$(LIBJSONSL_DIR) -Wl,-rpath $(LIBJSONSL_DIR) -ljsonsl $(PROFILE)
 CFLAGS=\
 	   -Wall -std=gnu89 -pedantic \
-	   -O3 -ggdb3 \
+	   -O2 -ggdb3 \
 	   -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC
 
 export CFLAGS
 export LDFLAGS
 
-all: json_test libjsonsl.so
+all: libjsonsl.so
 
 .PHONY: examples
 examples:
 	$(MAKE) -C $@
-
-
-json_test: json_test.c libjsonsl.so
-	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
-
-jpr_test: jpr_test.c libjsonsl.so
-	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 share: json_samples.tgz
 	tar xzf $^
@@ -28,12 +21,15 @@ json_examples_tarball:
 	rm -f json_samples.tgz
 	tar -czf json_samples.tgz share
 
-check: json_test share jpr_test
-	JSONSL_QUIET_TESTS=1 ./json_test share/*
-	JSONSL_QUIET_TESTS=1 ./jpr_test
+check: libjsonsl.so share
+	JSONSL_QUIET_TESTS=1 $(MAKE) -C tests
 
-bench: bench.c jsonsl.c
-	$(CC) $(CFLAGS) $^ -o $@
+perf/bench: perf/bench.c jsonsl.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+bench: perf/bench
+	@echo "Running benchmark"
+	time -p ./perf/bench share/auction 100
 
 libjsonsl.so: jsonsl.c
 	$(CC) $(CFLAGS) -shared -fPIC -o $@ $^
@@ -47,10 +43,12 @@ doc: Doxyfile
 
 .PHONY: clean
 clean:
-	rm -f *.o json_test *.so jpr_test
+	rm -f *.o *.so
 	rm -f -r share
 	rm -f -r *.dSYM
+	rm -f perf/bench
 	$(MAKE) -C examples clean
+	$(MAKE) -C tests clean
 
 distclean: clean
 	rm -rf share doc *.out
