@@ -152,6 +152,8 @@ typedef enum {
     X(HKEY_EXPECTED) \
 /* We got an illegal control character (bad whitespace or something) */ \
     X(WEIRD_WHITESPACE) \
+/* Found a \u-escape, but there were less than 4 following hex digits */ \
+    X(UESCAPE_TOOSHORT) \
 /* The following are for JPR Stuff */ \
     \
 /* Found a literal '%' but it was only followed by a single valid hex digit */ \
@@ -176,6 +178,33 @@ typedef enum {
  * A state is a single level of the stack
  */
 struct jsonsl_state_st {
+    /**
+     * The JSON object type
+     */
+    jsonsl_type_t type;
+
+    /** If this element is special, then its extended type is here */
+    jsonsl_special_t special_flags;
+
+    /**
+     * how many elements in the object/list.
+     * For objects (hashes), an element is either
+     * a key or a value. Thus for one complete pair,
+     * nelem will be 2.
+     * This field has no meaning for string/hkey/special types
+     */
+    unsigned int nelem;
+
+
+    /**
+     * Level of recursion into nesting. This is mainly a convenience
+     * variable, as this can technically be deduced from the lexer's
+     * level parameter (though the logic is not that simple)
+     */
+    unsigned int level;
+
+    /*TODO: merge this and special_flags into a union */
+
 
     /**
      * Position offset variables. These are relative to jsn->pos.
@@ -194,37 +223,17 @@ struct jsonsl_state_st {
      */
     size_t pos_cur;
 
-    /**
-     * The JSON object type
-     */
-    jsonsl_type_t type;
-
-    /**
-     * Level of recursion into nesting. This is mainly a convenience
-     * variable, as this can technically be deduced from the lexer's
-     * level parameter (though the logic is not that simple)
-     */
-    unsigned int level;
-
-    /*TODO: merge the following two members in a union */
-
-    /**
-     * how many elements in the object/list.
-     * For objects (hashes), an element is either
-     * a key or a value. Thus for one complete pair,
-     * nelem will be 2.
-     * This field has no meaning for string/hkey/special types
-     */
-    unsigned int nelem;
-
-    /** If this element is special, then its extended type is here */
-    jsonsl_special_t special_flags;
 
     /**
      * Useful for an opening nest, this will prevent a callback from being
      * invoked on this item or any of its children
      */
     int ignore_callback;
+
+    /**
+     * Counter which is incremented each time an escape ('\') is encountered.
+     */
+    unsigned int nescapes;
 
     /**
      * Put anything you want here. if JSONSL_STATE_USER_FIELDS is here, then
@@ -683,6 +692,37 @@ JSONSL_API
 const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match);
 
 /* @}*/
+
+/**
+ * Utility function to convert escape sequences into their original form.
+ *
+ * The decoders I've sampled do not seem to specify a standard behavior of what
+ * to escape/unescape.
+ *
+ * RFC 4627 Mandates only that the quoute, backslash, and ASCII control
+ * characters (0x00-0x1f) be escaped. It is often common for applications
+ * to escape a '/' - however this may also be desired behavior. the JSON
+ * spec is not clear on this, and therefore jsonsl leaves it up to you.
+ *
+ * @param in The input string.
+ * @param out An allocated output (should be the same size as in)
+ * @param len the size of the buffer
+ * @param toEscape - A sparse array of characters to unescape. Characters
+ * which are not present in this array, e.g. toEscape['c'] == 0 will be
+ * ignored and passed to the output in their original form.
+ * @param err A pointer to an error variable. If an error ocurrs, it will be
+ * set in this variable
+ *
+ * @return The effective size of the output buffer.
+ */
+JSONSL_API
+size_t jsonsl_util_unescape(const char *in,
+                             char *out,
+                             size_t len,
+                             const int toEscape[127],
+                             jsonsl_error_t *err);
+
+
 #endif /* JSONSL_NO_JPR */
 
 #ifdef __cplusplus

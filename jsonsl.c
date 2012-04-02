@@ -99,16 +99,20 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 #define CALLBACK_AND_POP_NOPOS(T) \
         state->pos_cur = jsn->pos; \
         CALLBACK(T, POP); \
+        state->nescapes = 0; \
         state = jsn->stack + (--jsn->level);
 
 #define CALLBACK_AND_POP(T) \
         CALLBACK_AND_POP_NOPOS(T); \
         state->pos_cur = jsn->pos;
 
+#define SPECIAL_POP \
+    CALLBACK_AND_POP(SPECIAL); \
+    jsn->expecting = 0;
+
 #define SPECIAL_MAYBE_POP \
     if (state->type == JSONSL_T_SPECIAL) { \
-        CALLBACK_AND_POP(SPECIAL); \
-        jsn->expecting = 0; \
+        SPECIAL_POP; \
     }
 
 
@@ -157,7 +161,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         if (state->type & JSONSL_Tf_STRINGY) {
             /**
              * For a string we don't care about anything above 0x23 (0x22 == '"')
-             * and the backslash (0x5c)
+             * and the backslash (0x5c).
+             * XXX: for some reason GCC does not optimize the (*c >= 0x5d) condition
+             * very well?
              */
             if ( (*c >= 0x23 && *c != '\\') || (*c == 0x20) ) {
                 goto GT_NEXT;
@@ -169,7 +175,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 INVOKE_ERROR(WEIRD_WHITESPACE);
             }
         } else if (state->type == JSONSL_T_SPECIAL) {
-            if ( (*c >= 0x30 && *c < 0x40) || is_special_end(*c) == 0) {
+            if ( (*c < 0x3a && *c > 0x2f) || is_special_end(*c) == 0) {
                 /* Most common case. Inside a number */
                 goto GT_NEXT;
             } else if (is_allowed_whitespace(*c)) {
@@ -179,9 +185,12 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                  * can also have dual-purpose (except for whitespace, which
                  * serves no other function).
                  */
-                SPECIAL_MAYBE_POP;
+                SPECIAL_POP;
                 goto GT_NEXT;
             }
+            /**
+             * TODO: check for NUL (0x0) etc.
+             */
         } else if (is_allowed_whitespace(*c)) {
             /* So we're not special. Harmless insignificant whitespace
              * passthrough
@@ -247,13 +256,13 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             } /* switch(state->type) */
         } else if (*c == '\\') {
         /* Escape */
-            if (! (state->type == JSONSL_T_STRING || state->type == JSONSL_T_HKEY) ) {
+            if ( (state->type & JSONSL_Tf_STRINGY) == 0 ) {
                 INVOKE_ERROR(ESCAPE_OUTSIDE_STRING);
             }
+            state->nescapes++;
             jsn->in_escape = 1;
             goto GT_NEXT;
         } /* " or \ */
-
 
         /* ignore string content */
         if (state->type & JSONSL_Tf_STRINGY) {
@@ -262,24 +271,38 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
         switch (*c) {
         case ':':
-        case ',':
-
-            if (*c == ',') {
-                SPECIAL_MAYBE_POP;
-                jsn->expecting = ','; /* hack */
-            }
-
             if (jsn->expecting != *c) {
                 INVOKE_ERROR(STRAY_TOKEN);
             }
+            jsn->tok_last = *c;
+            jsn->can_insert = 1;
+            goto GT_NEXT;
 
-            if (state->type == JSONSL_T_OBJECT && *c == ',') {
+        case ',':
+            /**
+             * The comma is one of the more generic tokens.
+             * In the context of an OBJECT, the can_insert flag
+             * should never be set, and no other action is
+             * necessary.
+             */
+            if (state->type == JSONSL_T_SPECIAL) {
+                SPECIAL_POP;
+                jsn->expecting = ',';
+            } else if (jsn->expecting != *c) {
+                /* make this branch execute only when we haven't manually
+                 * just placed the ',' in the expecting register.
+                 */
+                INVOKE_ERROR(STRAY_TOKEN);
+            }
+
+            if (state->type == JSONSL_T_OBJECT) {
                 /* end of hash value, expect a string as a hash key */
                 jsn->expecting = '"';
+            } else {
+                jsn->can_insert = 1;
             }
 
             jsn->tok_last = *c;
-            jsn->can_insert = 1;
             goto GT_NEXT;
 
             /* new list or object */
@@ -772,6 +795,134 @@ const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match)
 }
 
 #endif /* JSONSL_WITH_JPR */
+
+/**
+ * Maps literal escape sequences with special meaning to their
+ * actual control codes (e.g.\n => 0x20)
+ */
+static unsigned char Escape_Maps[0xff] = {
+        /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
+        /* 0x20 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x3f */
+        /* 0x40 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5f */
+        /* 0x60 */ 0,0, /* 0x61 */
+        /* 0x62 */ 8 /* b */, /* 0x62 */
+        /* 0x63 */ 0,0,0, /* 0x65 */
+        /* 0x66 */ 12 /* f */, /* 0x66 */
+        /* 0x67 */ 0,0,0,0,0,0,0, /* 0x6d */
+        /* 0x6e */ 32 /* n */, /* 0x6e */
+        /* 0x6f */ 0,0,0, /* 0x71 */
+        /* 0x72 */ 13 /* r */, /* 0x72 */
+        /* 0x73 */ 0, /* 0x73 */
+        /* 0x74 */ 9 /* t */, /* 0x74 */
+        /* 0x75 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x94 */
+        /* 0x95 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xb4 */
+        /* 0xb5 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xd4 */
+        /* 0xd5 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xf4 */
+        /* 0xf5 */ 0,0,0,0,0,0,0,0,0,0 /* 0xfe */
+};
+/**
+ * Utility function to convert escape sequences
+ */
+JSONSL_API
+size_t jsonsl_util_unescape(const char *in,
+                             char *out,
+                             size_t len,
+                             const int toEscape[127],
+                             jsonsl_error_t *err)
+{
+    const unsigned char *c = (const unsigned char*)in;
+    int in_escape = 0;
+    size_t origlen = len;
+    /* difference between the length of the input buffer and the output buffer */
+    size_t ndiff = 0;
+    for (; len; len--, c++, out++) {
+        unsigned int uesc_val[2];
+
+        if (in_escape) {
+            /* inside a previously ignored escape. Ignore */
+            in_escape = 0;
+            goto GT_ASSIGN;
+        }
+
+        if (*c != '\\') {
+            /* Not an escape, so we don't care about this */
+            goto GT_ASSIGN;
+        }
+
+        if (len < 2 ||
+                (toEscape[(unsigned char)c[1] & 0x7f] == 0
+                        && c[1] != '\\' && c[1] != '"' && *c > 0x1f)) {
+            /* either no following character, or the following
+             * character was not specified in the string table.
+             * Note we always un-escape the characters which mandate escape
+             * according to the json spec. (double-quote, reverse-solidus,
+             * and control characters)
+             */
+            in_escape = 1;
+            goto GT_ASSIGN;
+        }
+
+        if (c[1] != 'u') {
+            /* simple skip-and-replace using pre-defined maps.
+             * TODO: should the maps actually reflect the desired
+             * replacement character in toEscape?
+             */
+            if (Escape_Maps[c[1]]) {
+                /* Check if there is a corresponding replacement */
+                *out = Escape_Maps[c[1]];
+            } else {
+                /* Just gobble up the 'reverse-solidus' */
+                *out = c[1];
+            }
+            len--;
+            ndiff++;
+            c++;
+            /* do not assign, just continue */
+            continue;
+        }
+
+        /* next == 'u' */
+        if (len < 6) {
+            /* Need at least six characters:
+             * { [0] = '\\', [1] = 'u', [2] = 'f', [3] = 'f', [4] = 'f', [5] = 'f' }
+             */
+            *err = JSONSL_ERROR_UESCAPE_TOOSHORT;
+            return 0;
+        }
+
+        if (sscanf((const char*)(c+2), "%02x%02x", uesc_val, uesc_val+1) != 2) {
+            /* We treat the sequence as two octets */
+            *err = JSONSL_ERROR_UESCAPE_TOOSHORT;
+            return 0;
+        }
+
+        /* By now, we gobble up all the six bytes (current implied + 5 next
+         * characters), and have at least four missing bytes from the output
+         * buffer.
+         */
+        len -= 5;
+        c += 5;
+
+        ndiff += 4;
+        if (uesc_val[0] == 0) {
+            /* only one byte is extracted from the two
+             * possible octets. Increment the diff counter by one.
+             */
+            *out = uesc_val[1];
+            ndiff++;
+        } else {
+            *(out++) = uesc_val[0];
+            *out = uesc_val[1];
+        }
+        continue;
+
+        /* Only reached by previous branches */
+        GT_ASSIGN:
+        *out = *c;
+    }
+    *err = JSONSL_ERROR_SUCCESS;
+    return origlen - ndiff;
+}
 
 /**
  * Character Table definitions.
