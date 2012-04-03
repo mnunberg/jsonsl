@@ -1,6 +1,6 @@
 =head1 JSONSL
 
-JSON Stateful (or Simple, or Stacked) Lexer
+JSON Stateful (or Simple, or Stacked, or Searchable, or Streaming) Lexer
 
 =head1 Why another (and yet another) JSON lexer?
 
@@ -55,6 +55,22 @@ initial stack structures are initialized
 =item Simple
 
 Just a C source file, and a corresponding header file. ANSI C.
+
+While attempts will be made to add functionality and reduce boilerplate
+in your code, the core functions are simple and clearly defined.
+
+Add-ons (see below) are available (and exist in the same jsonsl.c file)
+
+=item JSONPointer search add-on
+
+Use L<JSONPointer|http://tools.ietf.org/html/draft-pbryan-zyp-json-pointer-02>
+to query JSON streams as they arrive. Quite efficient, and very simple (see
+jpr_test.c for examples)
+
+=item Unescaping utility add-on
+
+Includes a nice little function which can flexibly unescape JSON
+strings to match your specifications.
 
 =back
 

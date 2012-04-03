@@ -2,7 +2,7 @@ LIBJSONSL_DIR=$(shell pwd)
 LDFLAGS=-L$(LIBJSONSL_DIR) -Wl,-rpath $(LIBJSONSL_DIR) -ljsonsl $(PROFILE)
 CFLAGS=\
 	   -Wall -std=gnu89 -pedantic \
-	   -O2 -ggdb3 \
+	   -O3 -ggdb3 \
 	   -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC
 
 export CFLAGS

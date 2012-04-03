@@ -154,6 +154,10 @@ typedef enum {
     X(WEIRD_WHITESPACE) \
 /* Found a \u-escape, but there were less than 4 following hex digits */ \
     X(UESCAPE_TOOSHORT) \
+/* Invalid two-character escape */ \
+    X(ESCAPE_INVALID) \
+/* Trailing comma */ \
+    X(TRAILING_COMMA) \
 /* The following are for JPR Stuff */ \
     \
 /* Found a literal '%' but it was only followed by a single valid hex digit */ \
@@ -391,6 +395,10 @@ struct jsonsl_st {
     int return_UESCAPE;
     /*@}*/
 
+    struct {
+        int allow_trailing_comma;
+    } options;
+
     /** Put anything here */
     void *data;
 
@@ -585,6 +593,7 @@ struct jsonsl_jpr_st {
 
     /** The original match string. Useful for returning to the user */
     char *orig;
+    size_t norig;
 };
 
 
@@ -710,18 +719,31 @@ const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match);
  * @param toEscape - A sparse array of characters to unescape. Characters
  * which are not present in this array, e.g. toEscape['c'] == 0 will be
  * ignored and passed to the output in their original form.
+ * @param oflags If not null, and a \uXXXX escape expands to a non-ascii byte,
+ * then this variable will have the SPECIALf_NONASCII flag on.
+ *
  * @param err A pointer to an error variable. If an error ocurrs, it will be
  * set in this variable
+ * @param errat If not null and an error occurs, this will be set to point
+ * to the position within the string at which the offending character was
+ * encountered.
  *
  * @return The effective size of the output buffer.
  */
 JSONSL_API
-size_t jsonsl_util_unescape(const char *in,
-                             char *out,
-                             size_t len,
-                             const int toEscape[127],
-                             jsonsl_error_t *err);
+size_t jsonsl_util_unescape_ex(const char *in,
+                               char *out,
+                               size_t len,
+                               const int toEscape[128],
+                               jsonsl_special_t *oflags,
+                               jsonsl_error_t *err,
+                               const char **errat);
 
+/**
+ * Convenience macro to avoid passing too many parameters
+ */
+#define jsonsl_util_unescape(in, out, len, toEscape, err) \
+    jsonsl_util_unescape_ex(in, out, len, toEscape, NULL, err, NULL)
 
 #endif /* JSONSL_NO_JPR */
 

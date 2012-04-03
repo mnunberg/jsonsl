@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <assert.h>
 
+static int WantFail = 0;
+static jsonsl_error_t WantError = 0;
 
 void fmt_level(const char *buf, size_t nbuf, int levels)
 {
@@ -62,6 +64,12 @@ int error_callback(jsonsl_t jsn,
      * and maybe 'correct' and seek ahead of the buffer, and try to
      * do some correction.
      */
+    if (WantFail) {
+        printf("Got error %s (PASS)\n", jsonsl_strerror(err));
+        WantError = err;
+        return 0;
+    }
+
     fprintf(stderr, "Got parse error at '%c', pos %lu\n", *errat, jsn->pos);
     fprintf(stderr, "Error is %s\n", jsonsl_strerror(err));
     fprintf(stderr, "Remaining text: %s\n", errat);
@@ -78,6 +86,7 @@ void parse_single_file(const char *path)
     size_t nread = 0;
     int fd;
     jsonsl_t jsn;
+    WantError = 0;
 
     /* open our file */
     fd = open(path, O_RDONLY);
@@ -87,6 +96,11 @@ void parse_single_file(const char *path)
     }
 
     status = fstat(fd, &sb);
+    if (S_ISDIR(sb.st_mode)) {
+        fprintf(stderr, "\tS_ISDIR..\n");
+        close(fd);
+        return;
+    }
     assert(status == 0);
     assert(sb.st_size);
     assert(sb.st_size < 0x1000000);
@@ -121,7 +135,10 @@ void parse_single_file(const char *path)
         jsonsl_feed(jsn, bufp, nread);
         bufp += nread;
     }
-
+    if (WantFail && WantError == 0) {
+        fprintf(stderr, "Expected error but didn't find any!\n");
+        abort();
+    }
     jsonsl_destroy(jsn);
     free(buf);
 }
@@ -131,6 +148,10 @@ int main(int argc, char **argv)
     int ii;
     if (getenv("JSONSL_QUIET_TESTS")) {
         freopen("/dev/null", "w", stdout);
+    }
+    if (getenv("JSONSL_FAIL_TESTS")) {
+        printf("Want Fail..\n");
+        WantFail = 1;
     }
     if (argc < 2) {
         fprintf(stderr, "Usage: %s FILES..\n", argv[0]);

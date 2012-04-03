@@ -28,6 +28,14 @@ static int *Allowed_Whitespace;
     Allowed_Whitespace[(unsigned int)c & 0xff]
 
 
+/**
+ * This table contains allowed two-character escapes
+ * as per the RFC
+ */
+static int *Allowed_Escapes;
+#define is_allowed_escape(c) \
+    Allowed_Escapes[(unsigned int)c & 0xff]
+
 JSONSL_API
 jsonsl_t jsonsl_new(int nlevels)
 {
@@ -108,7 +116,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
 #define SPECIAL_POP \
     CALLBACK_AND_POP(SPECIAL); \
-    jsn->expecting = 0;
+    jsn->expecting = 0; \
+    jsn->tok_last = 0; \
 
 #define SPECIAL_MAYBE_POP \
     if (state->type == JSONSL_T_SPECIAL) { \
@@ -145,7 +154,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         /* Special escape handling for some stuff */
         if (jsn->in_escape) {
             jsn->in_escape = 0;
-            if (*c == 'u') {
+            if (!is_allowed_escape(*c)) {
+                INVOKE_ERROR(ESCAPE_INVALID);
+            } else if (*c == 'u') {
                 CALLBACK(UESCAPE, UESCAPE);
                 if (jsn->return_UESCAPE) {
                     return;
@@ -165,7 +176,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
              * XXX: for some reason GCC does not optimize the (*c >= 0x5d) condition
              * very well?
              */
-            if ( (*c >= 0x23 && *c != '\\') || (*c == 0x20) ) {
+            if ( ((*c >= 0x23 && *c != '\\') || (*c == 0x20)) && *c  ) {
                 goto GT_NEXT;
             } else if (*c == '"') {
                 /* terminator */
@@ -186,6 +197,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                  * serves no other function).
                  */
                 SPECIAL_POP;
+                jsn->expecting = ',';
                 goto GT_NEXT;
             }
             /**
@@ -219,6 +231,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                         INVOKE_ERROR(MISSING_TOKEN);
                     }
                     jsn->expecting = ','; /* Can't figure out what to expect next */
+                    jsn->tok_last = 0;
 
                     STACK_PUSH;
                     state->type = JSONSL_T_STRING;
@@ -243,6 +256,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 STACK_PUSH;
                 state->type = JSONSL_T_STRING;
                 jsn->expecting = ',';
+                jsn->tok_last = 0;
                 CALLBACK(STRING, PUSH);
                 goto GT_NEXT;
 
@@ -274,8 +288,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             if (jsn->expecting != *c) {
                 INVOKE_ERROR(STRAY_TOKEN);
             }
-            jsn->tok_last = *c;
+            jsn->tok_last = ':';
             jsn->can_insert = 1;
+            jsn->expecting = '"';
             goto GT_NEXT;
 
         case ',':
@@ -302,7 +317,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 jsn->can_insert = 1;
             }
 
-            jsn->tok_last = *c;
+            jsn->tok_last = ',';
+            jsn->expecting = '"';
             goto GT_NEXT;
 
             /* new list or object */
@@ -336,9 +352,14 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         case '}':
         case ']':
             SPECIAL_MAYBE_POP;
+            if (jsn->tok_last == ',' && jsn->options.allow_trailing_comma == 0) {
+                INVOKE_ERROR(TRAILING_COMMA);
+            }
+
             jsn->can_insert = 0;
             jsn->level--;
             jsn->expecting = ',';
+            jsn->tok_last = 0;
             if (*c == ']') {
                 if (state->type != '[') {
                     INVOKE_ERROR(BRACKET_MISMATCH);
@@ -378,6 +399,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 }
                 ENSURE_HVAL;
                 state->nelem++;
+                if (!jsn->can_insert) {
+                    INVOKE_ERROR(CANT_INSERT);
+                }
                 STACK_PUSH;
                 state->type = JSONSL_T_SPECIAL;
                 state->special_flags = special_flags;
@@ -586,6 +610,7 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
     ret->ncomponents = curidx;
     ret->basestr = my_copy;
     ret->orig = malloc(origlen);
+    ret->norig = origlen-1;
     strcpy(ret->orig, path);
 
     return ret;
@@ -800,44 +825,36 @@ const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match)
  * Maps literal escape sequences with special meaning to their
  * actual control codes (e.g.\n => 0x20)
  */
-static unsigned char Escape_Maps[0xff] = {
-        /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
-        /* 0x20 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x3f */
-        /* 0x40 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5f */
-        /* 0x60 */ 0,0, /* 0x61 */
-        /* 0x62 */ 8 /* b */, /* 0x62 */
-        /* 0x63 */ 0,0,0, /* 0x65 */
-        /* 0x66 */ 12 /* f */, /* 0x66 */
-        /* 0x67 */ 0,0,0,0,0,0,0, /* 0x6d */
-        /* 0x6e */ 32 /* n */, /* 0x6e */
-        /* 0x6f */ 0,0,0, /* 0x71 */
-        /* 0x72 */ 13 /* r */, /* 0x72 */
-        /* 0x73 */ 0, /* 0x73 */
-        /* 0x74 */ 9 /* t */, /* 0x74 */
-        /* 0x75 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x94 */
-        /* 0x95 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xb4 */
-        /* 0xb5 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xd4 */
-        /* 0xd5 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xf4 */
-        /* 0xf5 */ 0,0,0,0,0,0,0,0,0,0 /* 0xfe */
-};
+static unsigned char *Escape_Maps;
 /**
  * Utility function to convert escape sequences
  */
 JSONSL_API
-size_t jsonsl_util_unescape(const char *in,
-                             char *out,
-                             size_t len,
-                             const int toEscape[127],
-                             jsonsl_error_t *err)
+size_t jsonsl_util_unescape_ex(const char *in,
+                               char *out,
+                               size_t len,
+                               const int toEscape[128],
+                               jsonsl_special_t *oflags,
+                               jsonsl_error_t *err,
+                               const char **errat)
 {
     const unsigned char *c = (const unsigned char*)in;
     int in_escape = 0;
     size_t origlen = len;
     /* difference between the length of the input buffer and the output buffer */
     size_t ndiff = 0;
+    if (oflags) {
+        *oflags = 0;
+    }
+#define UNESCAPE_BAIL(e,offset) \
+    *err = JSONSL_ERROR_##e; \
+    if (errat) { \
+        *errat = (const char*)(c+ (ssize_t)(offset)); \
+    } \
+    return 0;
+
     for (; len; len--, c++, out++) {
         unsigned int uesc_val[2];
-
         if (in_escape) {
             /* inside a previously ignored escape. Ignore */
             in_escape = 0;
@@ -849,14 +866,16 @@ size_t jsonsl_util_unescape(const char *in,
             goto GT_ASSIGN;
         }
 
-        if (len < 2 ||
-                (toEscape[(unsigned char)c[1] & 0x7f] == 0
-                        && c[1] != '\\' && c[1] != '"' && *c > 0x1f)) {
-            /* either no following character, or the following
-             * character was not specified in the string table.
-             * Note we always un-escape the characters which mandate escape
-             * according to the json spec. (double-quote, reverse-solidus,
-             * and control characters)
+        if (len < 2) {
+            UNESCAPE_BAIL(ESCAPE_INVALID, 0);
+        }
+        if (!is_allowed_escape(c[1])) {
+            UNESCAPE_BAIL(ESCAPE_INVALID, 1)
+        }
+        if ((toEscape[(unsigned char)c[1] & 0x7f] == 0 &&
+                c[1] != '\\' && c[1] != '"')) {
+            /* if we don't want to unescape this string, just continue with
+             * the escape flag set
              */
             in_escape = 1;
             goto GT_ASSIGN;
@@ -886,14 +905,12 @@ size_t jsonsl_util_unescape(const char *in,
             /* Need at least six characters:
              * { [0] = '\\', [1] = 'u', [2] = 'f', [3] = 'f', [4] = 'f', [5] = 'f' }
              */
-            *err = JSONSL_ERROR_UESCAPE_TOOSHORT;
-            return 0;
+            UNESCAPE_BAIL(UESCAPE_TOOSHORT, -1);
         }
 
         if (sscanf((const char*)(c+2), "%02x%02x", uesc_val, uesc_val+1) != 2) {
             /* We treat the sequence as two octets */
-            *err = JSONSL_ERROR_UESCAPE_TOOSHORT;
-            return 0;
+            UNESCAPE_BAIL(UESCAPE_TOOSHORT, -1);
         }
 
         /* By now, we gobble up all the six bytes (current implied + 5 next
@@ -909,10 +926,16 @@ size_t jsonsl_util_unescape(const char *in,
              * possible octets. Increment the diff counter by one.
              */
             *out = uesc_val[1];
+            if (oflags && *(unsigned char*)out > 0x7f) {
+                *oflags |= JSONSL_SPECIALf_NONASCII;
+            }
             ndiff++;
         } else {
             *(out++) = uesc_val[0];
             *out = uesc_val[1];
+            if (oflags && (uesc_val[0] > 0x7f || uesc_val[1] > 0x7f)) {
+                *oflags |= JSONSL_SPECIALf_NONASCII;
+            }
         }
         continue;
 
@@ -933,7 +956,7 @@ size_t jsonsl_util_unescape(const char *in,
  * This table contains the beginnings of non-string
  * allowable (bareword) values.
  */
-static jsonsl_special_t _special_table[0xff] = {
+static jsonsl_special_t _special_table[0x100] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
         /* 0x20 */ 0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x2c */
         /* 0x2d */ JSONSL_SPECIALf_SIGNED /* - */, /* 0x2d */
@@ -967,7 +990,7 @@ static jsonsl_special_t *Special_table = _special_table;
  * Contains characters which signal the termination of any of the 'special' bareword
  * values.
  */
-static int _special_endings[0xff] = {
+static int _special_endings[0x100] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0, /* 0x08 */
         /* 0x09 */ 1 /* <TAB> */, /* 0x09 */
         /* 0x0a */ 1 /* <LF> */, /* 0x0a */
@@ -1000,7 +1023,7 @@ static int *Special_Endings = _special_endings;
 /**
  * Contains allowable whitespace.
  */
-static int _allowed_whitespace[0xff] = {
+static int _allowed_whitespace[0x100] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0, /* 0x08 */
         /* 0x09 */ 1 /* <TAB> */, /* 0x09 */
         /* 0x0a */ 1 /* <LF> */, /* 0x0a */
@@ -1017,3 +1040,59 @@ static int _allowed_whitespace[0xff] = {
         /* 0xe1 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 /* 0xfe */
 };
 static int *Allowed_Whitespace = _allowed_whitespace;
+
+/**
+ * Allowable two-character 'common' escapes:
+ */
+static int _allowed_escapes[0x100] = {
+        /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
+        /* 0x20 */ 0,0, /* 0x21 */
+        /* 0x22 */ 1 /* <"> */, /* 0x22 */
+        /* 0x23 */ 0,0,0,0,0,0,0,0,0,0,0,0, /* 0x2e */
+        /* 0x2f */ 1 /* </> */, /* 0x2f */
+        /* 0x30 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x4f */
+        /* 0x50 */ 0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5b */
+        /* 0x5c */ 1 /* <\> */, /* 0x5c */
+        /* 0x5d */ 0,0,0,0,0, /* 0x61 */
+        /* 0x62 */ 1 /* <b> */, /* 0x62 */
+        /* 0x63 */ 0,0,0, /* 0x65 */
+        /* 0x66 */ 1 /* <f> */, /* 0x66 */
+        /* 0x67 */ 0,0,0,0,0,0,0, /* 0x6d */
+        /* 0x6e */ 1 /* <n> */, /* 0x6e */
+        /* 0x6f */ 0,0,0, /* 0x71 */
+        /* 0x72 */ 1 /* <r> */, /* 0x72 */
+        /* 0x73 */ 0, /* 0x73 */
+        /* 0x74 */ 1 /* <t> */, /* 0x74 */
+        /* 0x75 */ 1 /* <u> */, /* 0x75 */
+        /* 0x76 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x95 */
+        /* 0x96 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xb5 */
+        /* 0xb6 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xd5 */
+        /* 0xd6 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xf5 */
+        /* 0xf6 */ 0,0,0,0,0,0,0,0,0, /* 0xfe */
+};
+
+static int *Allowed_Escapes = _allowed_escapes;
+
+
+static unsigned char _escape_maps[0x100] = {
+        /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
+        /* 0x20 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x3f */
+        /* 0x40 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5f */
+        /* 0x60 */ 0,0, /* 0x61 */
+        /* 0x62 */ 8 /* <b> */, /* 0x62 */
+        /* 0x63 */ 0,0,0, /* 0x65 */
+        /* 0x66 */ 12 /* <f> */, /* 0x66 */
+        /* 0x67 */ 0,0,0,0,0,0,0, /* 0x6d */
+        /* 0x6e */ 10 /* <n> */, /* 0x6e */
+        /* 0x6f */ 0,0,0, /* 0x71 */
+        /* 0x72 */ 13 /* <r> */, /* 0x72 */
+        /* 0x73 */ 0, /* 0x73 */
+        /* 0x74 */ 9 /* <t> */, /* 0x74 */
+        /* 0x75 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x94 */
+        /* 0x95 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xb4 */
+        /* 0xb5 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xd4 */
+        /* 0xd5 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xf4 */
+        /* 0xf5 */ 0,0,0,0,0,0,0,0,0,0 /* 0xfe */
+};
+
+static unsigned char *Escape_Maps = _escape_maps;
