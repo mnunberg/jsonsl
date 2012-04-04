@@ -158,6 +158,8 @@ typedef enum {
     X(ESCAPE_INVALID) \
 /* Trailing comma */ \
     X(TRAILING_COMMA) \
+/* An invalid number was passed in a numeric field */ \
+    X(INVALID_NUMBER) \
 /* The following are for JPR Stuff */ \
     \
 /* Found a literal '%' but it was only followed by a single valid hex digit */ \
@@ -195,9 +197,13 @@ struct jsonsl_state_st {
      * For objects (hashes), an element is either
      * a key or a value. Thus for one complete pair,
      * nelem will be 2.
-     * This field has no meaning for string/hkey/special types
+     *
+     * For special types, this will hold the sum of the digits.
+     * This only holds true for values which are simple signed/unsigned
+     * numbers. Otherwise a special flag is set, and extra handling is not
+     * performed.
      */
-    unsigned int nelem;
+    unsigned long nelem;
 
 
     /**
@@ -208,7 +214,6 @@ struct jsonsl_state_st {
     unsigned int level;
 
     /*TODO: merge this and special_flags into a union */
-
 
     /**
      * Position offset variables. These are relative to jsn->pos.

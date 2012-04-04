@@ -1,6 +1,6 @@
 all: bench yajl-perftest
 
-CFLAGS+= -Wno-overlength-strings -fvisibility=hidden -DNDEBUG -mtune=native
+CFLAGS+= -Wno-overlength-strings -fvisibility=hidden -DJSONSL_NO_JPR -DNDEBUG
 #CFLAGS+=-DJSONSL_USE_METRICS
 BENCH_LFLAGS=
 

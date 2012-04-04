@@ -27,7 +27,6 @@ struct jsonsl_metrics_st {
 };
 
 static struct jsonsl_metrics_st GlobalMetrics = { 0 };
-
 static unsigned long GenericCounter[0x100] = { 0 };
 static unsigned long StringyCatchCounter[0x100] = { 0 };
 
@@ -214,6 +213,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         INVOKE_ERROR(HKEY_EXPECTED); \
     }
 
+#define EXTRACT_NUMERIC \
+
+
     const jsonsl_uchar_t *c = (jsonsl_uchar_t*)bytes;
     size_t levels_max = jsn->levels_max;
     struct jsonsl_state_st *state = jsn->stack + jsn->level;
@@ -243,7 +245,11 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             /* check if our character cannot ever change our current string state
              * or throw an error
              */
-            if (!chrt_string_nopass[CUR_CHAR]) {
+            if (
+#ifdef JSONSL_USE_WCHAR
+                    CUR_CHAR >= 0x100 ||
+#endif /* JSONSL_USE_WCHAR */
+                    (!chrt_string_nopass[CUR_CHAR & 0xff])) {
                 INCR_METRIC(STRINGY_INSIGNIFICANT);
                 goto GT_NEXT;
             } else if (CUR_CHAR == '"') {
@@ -256,6 +262,43 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             INCR_METRIC(STRINGY_SLOWPATH);
 
         } else if (state->type == JSONSL_T_SPECIAL) {
+            if (state->special_flags & (JSONSL_SPECIALf_SIGNED|JSONSL_SPECIALf_UNSIGNED)) {
+                switch (CUR_CHAR) {
+                case '1':
+                case '2':
+                case '3':
+                case '4':
+                case '5':
+                case '6':
+                case '7':
+                case '8':
+                case '9':
+                case '0':
+                    state->nelem = (state->nelem*10) + (CUR_CHAR-0x30);
+                    goto GT_NEXT;
+
+                case 'e':
+                case 'E':
+                case '-':
+                case '+':
+                    state->special_flags |= JSONSL_SPECIALf_EXPONENT;
+                    goto GT_NEXT;
+                case '.':
+                    state->special_flags |= JSONSL_SPECIALf_FLOAT;
+                    goto GT_NEXT;
+                default:
+                    if (is_special_end(CUR_CHAR)) {
+                        SPECIAL_POP;
+                        jsn->expecting = ',';
+                        if (is_allowed_whitespace(CUR_CHAR)) {
+                            goto GT_NEXT;
+                        }
+                        goto GT_STRUCTURAL_TOKEN;
+                    }
+                    INVOKE_ERROR(INVALID_NUMBER);
+                    break;
+                }
+            }
             if (!is_special_end(CUR_CHAR)) {
                 INCR_METRIC(SPECIAL_FASTPATH);
                 /* Most common case. Inside a number */
@@ -483,6 +526,11 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 STACK_PUSH;
                 state->type = JSONSL_T_SPECIAL;
                 state->special_flags = special_flags;
+                if (special_flags == JSONSL_SPECIALf_UNSIGNED) {
+                    state->nelem = CUR_CHAR - 0x30;
+                } else {
+                    state->nelem = 0;
+                }
                 CALLBACK(SPECIAL, PUSH);
             }
             goto GT_NEXT;
