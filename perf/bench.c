@@ -33,5 +33,6 @@ int main(int argc, char **argv)
         jsonsl_reset(jsn);
         jsonsl_feed(jsn, buf, sb.st_size);
     }
+    jsonsl_dump_global_metrics();
     return 0;
 }

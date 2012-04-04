@@ -1,0 +1,16 @@
+Doxyfile
+LICENSE
+Makefile
+README.pod
+examples/Makefile
+examples/glib-datatypes.c
+examples/glib-datatypes.h
+json_samples.tgz
+jsonsl.c
+jsonsl.h
+perf/bench.c
+srcutil/genchartables.pl
+tests/Makefile
+tests/jpr_test.c
+tests/json_test.c
+tests/unescape.c

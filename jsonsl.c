@@ -3,6 +3,78 @@
 #include <limits.h>
 #include <ctype.h>
 
+#ifdef JSONSL_USE_METRICS
+#define XMETRICS \
+    X(STRINGY_INSIGNIFICANT) \
+    X(STRINGY_SLOWPATH) \
+    X(ALLOWED_WHITESPACE) \
+    X(QUOTE_FASTPATH) \
+    X(SPECIAL_FASTPATH) \
+    X(SPECIAL_WSPOP) \
+    X(SPECIAL_SLOWPATH) \
+    X(GENERIC) \
+    X(STRUCTURAL_TOKEN) \
+    X(SPECIAL_SWITCHFIRST) \
+    X(STRINGY_CATCH) \
+    X(ESCAPES) \
+    X(TOTAL) \
+
+struct jsonsl_metrics_st {
+#define X(m) \
+    unsigned long metric_##m;
+    XMETRICS
+#undef X
+};
+
+static struct jsonsl_metrics_st GlobalMetrics = { 0 };
+
+static unsigned long GenericCounter[0x100] = { 0 };
+static unsigned long StringyCatchCounter[0x100] = { 0 };
+
+#define INCR_METRIC(m) \
+    GlobalMetrics.metric_##m++;
+
+#define INCR_GENERIC(c) \
+        INCR_METRIC(GENERIC); \
+        GenericCounter[c]++; \
+
+#define INCR_STRINGY_CATCH(c) \
+    INCR_METRIC(STRINGY_CATCH); \
+    StringyCatchCounter[c]++;
+
+JSONSL_API
+void jsonsl_dump_global_metrics(void)
+{
+    int ii;
+    printf("JSONSL Metrics:\n");
+#define X(m) \
+    printf("\t%-30s %20lu (%0.2f%%)\n", #m, GlobalMetrics.metric_##m, \
+           (float)((float)(GlobalMetrics.metric_##m/(float)GlobalMetrics.metric_TOTAL)) * 100);
+    XMETRICS
+#undef X
+    printf("Generic Characters:\n");
+    for (ii = 0; ii < 0xff; ii++) {
+        if (GenericCounter[ii]) {
+            printf("\t[ %c ] %lu\n", ii, GenericCounter[ii]);
+        }
+    }
+    printf("Weird string loop\n");
+    for (ii = 0; ii < 0xff; ii++) {
+        if (StringyCatchCounter[ii]) {
+            printf("\t[ %c ] %lu\n", ii, StringyCatchCounter[ii]);
+        }
+    }
+}
+
+#else
+#define INCR_METRIC(m)
+#define INCR_GENERIC(c)
+#define INCR_STRINGY_CATCH(c)
+JSONSL_API
+void jsonsl_dump_global_metrics(void) { }
+#endif /* JSONSL_USE_METRICS */
+
+
 /**
  * This table (predeclared) contains characters which are recognized
  * non-string values.
@@ -25,7 +97,7 @@ static int *Special_Endings;
  */
 static int *Allowed_Whitespace;
 #define is_allowed_whitespace(c) \
-    Allowed_Whitespace[(unsigned int)c & 0xff]
+    (c == ' ' || Allowed_Whitespace[(unsigned int)c & 0xff])
 
 
 /**
@@ -61,8 +133,9 @@ void jsonsl_reset(jsonsl_t jsn)
     jsn->in_escape = 0;
     jsn->expecting = 0;
 
+    memset(jsn->stack, 0, (jsn->levels_max * sizeof (struct jsonsl_state_st)));
+
     for (ii = 0; ii < jsn->levels_max; ii++) {
-        memset(jsn->stack + ii, 0, sizeof(struct jsonsl_state_st));
         jsn->stack[ii].level = ii;
     }
 }
@@ -119,11 +192,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
     jsn->expecting = 0; \
     jsn->tok_last = 0; \
 
-#define SPECIAL_MAYBE_POP \
-    if (state->type == JSONSL_T_SPECIAL) { \
-        SPECIAL_POP; \
-    }
-
+#define CUR_CHAR (*(jsonsl_uchar_t*)c)
 
 #define CALLBACK(T, action) \
     if (jsn->call_##T && \
@@ -148,15 +217,17 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
     const jsonsl_uchar_t *c = (jsonsl_uchar_t*)bytes;
     size_t levels_max = jsn->levels_max;
     struct jsonsl_state_st *state = jsn->stack + jsn->level;
+    static int chrt_string_nopass[0x100] = { JSONSL_CHARTABLE_string_nopass };
     jsn->base = bytes;
 
     for (; nbytes; nbytes--, jsn->pos++, c++) {
+        INCR_METRIC(TOTAL);
         /* Special escape handling for some stuff */
         if (jsn->in_escape) {
             jsn->in_escape = 0;
-            if (!is_allowed_escape(*c)) {
+            if (!is_allowed_escape(CUR_CHAR)) {
                 INVOKE_ERROR(ESCAPE_INVALID);
-            } else if (*c == 'u') {
+            } else if (CUR_CHAR == 'u') {
                 CALLBACK(UESCAPE, UESCAPE);
                 if (jsn->return_UESCAPE) {
                     return;
@@ -164,53 +235,60 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             }
             goto GT_NEXT;
         }
-
         GT_AGAIN:
         /**
          * Several fast-tracks for common cases:
          */
         if (state->type & JSONSL_Tf_STRINGY) {
-            /**
-             * For a string we don't care about anything above 0x23 (0x22 == '"')
-             * and the backslash (0x5c).
-             * XXX: for some reason GCC does not optimize the (*c >= 0x5d) condition
-             * very well?
+            /* check if our character cannot ever change our current string state
+             * or throw an error
              */
-            if ( ((*c >= 0x23 && *c != '\\') || (*c == 0x20)) && *c  ) {
+            if (!chrt_string_nopass[CUR_CHAR]) {
+                INCR_METRIC(STRINGY_INSIGNIFICANT);
                 goto GT_NEXT;
-            } else if (*c == '"') {
-                /* terminator */
+            } else if (CUR_CHAR == '"') {
                 goto GT_QUOTE;
-            } else if (*c < 0x20) {
-                /* unescaped whitespace */
+            } else if (CUR_CHAR == '\\') {
+                goto GT_ESCAPE;
+            } else {
                 INVOKE_ERROR(WEIRD_WHITESPACE);
             }
+            INCR_METRIC(STRINGY_SLOWPATH);
+
         } else if (state->type == JSONSL_T_SPECIAL) {
-            if ( (*c < 0x3a && *c > 0x2f) || is_special_end(*c) == 0) {
+            if (!is_special_end(CUR_CHAR)) {
+                INCR_METRIC(SPECIAL_FASTPATH);
                 /* Most common case. Inside a number */
                 goto GT_NEXT;
-            } else if (is_allowed_whitespace(*c)) {
-                /**
-                 * Note how we only check for the whitespace-subset of
-                 * special terminators. This because a 'special terminator'
-                 * can also have dual-purpose (except for whitespace, which
-                 * serves no other function).
-                 */
-                SPECIAL_POP;
-                jsn->expecting = ',';
+            }
+
+            SPECIAL_POP;
+            jsn->expecting = ',';
+            if (is_allowed_whitespace(CUR_CHAR)) {
                 goto GT_NEXT;
             }
             /**
-             * TODO: check for NUL (0x0) etc.
+             * This works because we have a non-whitespace token
+             * which is not a special token. If this is a structural
+             * character then it will be gracefully handled by the
+             * switch statement. Otherwise it will default to the 'special'
+             * state again,
              */
-        } else if (is_allowed_whitespace(*c)) {
+            goto GT_STRUCTURAL_TOKEN;
+        } else if (is_allowed_whitespace(CUR_CHAR)) {
+            INCR_METRIC(ALLOWED_WHITESPACE);
             /* So we're not special. Harmless insignificant whitespace
              * passthrough
              */
             goto GT_NEXT;
+        } else if (extract_special(CUR_CHAR)) {
+            /* not a string, whitespace, or structural token. must be special */
+            goto GT_SPECIAL_BEGIN;
         }
 
-        if (*c == '"') {
+        INCR_GENERIC(CUR_CHAR);
+
+        if (CUR_CHAR == '"') {
             GT_QUOTE:
             jsn->can_insert = 0;
             switch (state->type) {
@@ -268,7 +346,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 INVOKE_ERROR(STRING_OUTSIDE_CONTAINER);
                 break;
             } /* switch(state->type) */
-        } else if (*c == '\\') {
+        } else if (CUR_CHAR == '\\') {
+            GT_ESCAPE:
+            INCR_METRIC(ESCAPES);
         /* Escape */
             if ( (state->type & JSONSL_Tf_STRINGY) == 0 ) {
                 INVOKE_ERROR(ESCAPE_OUTSIDE_STRING);
@@ -278,14 +358,11 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             goto GT_NEXT;
         } /* " or \ */
 
-        /* ignore string content */
-        if (state->type & JSONSL_Tf_STRINGY) {
-            goto GT_NEXT;
-        }
-
-        switch (*c) {
+        GT_STRUCTURAL_TOKEN:
+        switch (CUR_CHAR) {
         case ':':
-            if (jsn->expecting != *c) {
+            INCR_METRIC(STRUCTURAL_TOKEN);
+            if (jsn->expecting != CUR_CHAR) {
                 INVOKE_ERROR(STRAY_TOKEN);
             }
             jsn->tok_last = ':';
@@ -294,16 +371,14 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             goto GT_NEXT;
 
         case ',':
+            INCR_METRIC(STRUCTURAL_TOKEN);
             /**
              * The comma is one of the more generic tokens.
              * In the context of an OBJECT, the can_insert flag
              * should never be set, and no other action is
              * necessary.
              */
-            if (state->type == JSONSL_T_SPECIAL) {
-                SPECIAL_POP;
-                jsn->expecting = ',';
-            } else if (jsn->expecting != *c) {
+            if (jsn->expecting != CUR_CHAR) {
                 /* make this branch execute only when we haven't manually
                  * just placed the ',' in the expecting register.
                  */
@@ -322,8 +397,10 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             goto GT_NEXT;
 
             /* new list or object */
-        case '[':
+            /* hashes are more common */
         case '{':
+        case '[':
+            INCR_METRIC(STRUCTURAL_TOKEN);
             if (!jsn->can_insert) {
                 INVOKE_ERROR(CANT_INSERT);
             }
@@ -333,14 +410,14 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
             STACK_PUSH;
             /* because the constants match the opening delimiters, we can do this: */
-            state->type = *c;
+            state->type = CUR_CHAR;
             state->nelem = 0;
             jsn->can_insert = 1;
-            if (*c == '{') {
+            if (CUR_CHAR == '{') {
                 /* If we're a hash, we expect a key first, which is quouted */
                 jsn->expecting = '"';
             }
-            if (*c == JSONSL_T_OBJECT) {
+            if (CUR_CHAR == JSONSL_T_OBJECT) {
                 CALLBACK(OBJECT, PUSH);
             } else {
                 CALLBACK(LIST, PUSH);
@@ -351,7 +428,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             /* closing of list or object */
         case '}':
         case ']':
-            SPECIAL_MAYBE_POP;
+            INCR_METRIC(STRUCTURAL_TOKEN);
             if (jsn->tok_last == ',' && jsn->options.allow_trailing_comma == 0) {
                 INVOKE_ERROR(TRAILING_COMMA);
             }
@@ -360,7 +437,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             jsn->level--;
             jsn->expecting = ',';
             jsn->tok_last = 0;
-            if (*c == ']') {
+            if (CUR_CHAR == ']') {
                 if (state->type != '[') {
                     INVOKE_ERROR(BRACKET_MISMATCH);
                 }
@@ -376,6 +453,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             goto GT_NEXT;
 
         default:
+            GT_SPECIAL_BEGIN:
             /**
              * Not a string, not a structural token, and not benign whitespace.
              * Technically we should iterate over the character always, but since
@@ -383,15 +461,15 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
              * we only check upon entry.
              */
             if (state->type != JSONSL_T_SPECIAL) {
-                int special_flags = extract_special(*c);
+                int special_flags = extract_special(CUR_CHAR);
                 if (!special_flags) {
                     /**
                      * Try to do some heuristics here anyway to figure out what kind of
                      * error this is. The 'special' case is a fallback scenario anyway.
                      */
-                    if (*c == '\0') {
+                    if (CUR_CHAR == '\0') {
                         INVOKE_ERROR(FOUND_NULL_BYTE);
-                    } else if (*c < 0x20) {
+                    } else if (CUR_CHAR < 0x20) {
                         INVOKE_ERROR(WEIRD_WHITESPACE);
                     } else {
                         INVOKE_ERROR(SPECIAL_EXPECTED);

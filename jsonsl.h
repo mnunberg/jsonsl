@@ -52,7 +52,7 @@ typedef struct jsonsl_jpr_st* jsonsl_jpr_t;
  * This flag is true when AND'd against a type whose value
  * must be in "quoutes" i.e. T_HKEY and T_STRING
  */
-#define JSONSL_Tf_STRINGY 0x80
+#define JSONSL_Tf_STRINGY 0xffff00
 
 /**
  * Constant representing the special JSON types.
@@ -505,6 +505,13 @@ const char* jsonsl_strerror(jsonsl_error_t err);
 JSONSL_API
 const char* jsonsl_strtype(jsonsl_type_t jt);
 
+/**
+ * Dumps global metrics to the screen. This is a noop unless
+ * jsonsl was compiled with JSONSL_USE_METRICS
+ */
+JSONSL_API
+void jsonsl_dump_global_metrics(void);
+
 /* This macro just here for editors to do code folding */
 #ifndef JSONSL_NO_JPR
 
@@ -746,6 +753,44 @@ size_t jsonsl_util_unescape_ex(const char *in,
     jsonsl_util_unescape_ex(in, out, len, toEscape, NULL, err, NULL)
 
 #endif /* JSONSL_NO_JPR */
+
+/**
+ * HERE BE CHARACTER TABLES!
+ */
+#define JSONSL_CHARTABLE_string_nopass \
+/* 0x00 */ 1 /* <NUL> */, /* 0x00 */  \
+/* 0x01 */ 1 /* <SOH> */, /* 0x01 */  \
+/* 0x02 */ 1 /* <STX> */, /* 0x02 */  \
+/* 0x03 */ 1 /* <ETX> */, /* 0x03 */  \
+/* 0x04 */ 1 /* <EOT> */, /* 0x04 */  \
+/* 0x05 */ 1 /* <ENQ> */, /* 0x05 */  \
+/* 0x06 */ 1 /* <ACK> */, /* 0x06 */  \
+/* 0x07 */ 1 /* <BEL> */, /* 0x07 */  \
+/* 0x08 */ 1 /* <BS> */, /* 0x08 */  \
+/* 0x09 */ 1 /* <HT> */, /* 0x09 */  \
+/* 0x0a */ 1 /* <LF> */, /* 0x0a */  \
+/* 0x0b */ 1 /* <VT> */, /* 0x0b */  \
+/* 0x0c */ 1 /* <FF> */, /* 0x0c */  \
+/* 0x0d */ 1 /* <CR> */, /* 0x0d */  \
+/* 0x0e */ 1 /* <SO> */, /* 0x0e */  \
+/* 0x0f */ 1 /* <SI> */, /* 0x0f */  \
+/* 0x10 */ 1 /* <DLE> */, /* 0x10 */  \
+/* 0x11 */ 1 /* <DC1> */, /* 0x11 */  \
+/* 0x12 */ 1 /* <DC2> */, /* 0x12 */  \
+/* 0x13 */ 1 /* <DC3> */, /* 0x13 */  \
+/* 0x14 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x21 */  \
+/* 0x22 */ 1 /* <"> */, /* 0x22 */  \
+/* 0x23 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x42 */  \
+/* 0x43 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5b */  \
+/* 0x5c */ 1 /* <\> */, /* 0x5c */  \
+/* 0x5d */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x7c */  \
+/* 0x7d */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x9c */  \
+/* 0x9d */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xbc */  \
+/* 0xbd */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xdc */  \
+/* 0xdd */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xfc */  \
+/* 0xfd */ 0,0 /* 0xfe */  \
+
+
 
 #ifdef __cplusplus
 }

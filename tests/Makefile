@@ -7,6 +7,8 @@ all: $(TESTMODS)
 	./json_test ../share/jsc/pass*.json
 	JSONSL_FAIL_TESTS=1 ./json_test ../share/jsc/fail*.json
 	@echo "All Tests OK"
+	@echo "These files were skipped. See tests/jsc/nyi_fail for more info"
+	@ls ../share/jsc/nyi_fail/
 
 %: %.c
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)

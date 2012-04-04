@@ -24,12 +24,8 @@ json_examples_tarball:
 check: libjsonsl.so share
 	JSONSL_QUIET_TESTS=1 $(MAKE) -C tests
 
-perf/bench: perf/bench.c jsonsl.c
-	$(CC) $(CFLAGS) -o $@ $^
-
-bench: perf/bench
-	@echo "Running benchmark"
-	time -p ./perf/bench share/auction 100
+bench:
+	$(MAKE) -C perf run-benchmarks
 
 libjsonsl.so: jsonsl.c
 	$(CC) $(CFLAGS) -shared -fPIC -o $@ $^
@@ -46,9 +42,13 @@ clean:
 	rm -f *.o *.so
 	rm -f -r share
 	rm -f -r *.dSYM
-	rm -f perf/bench
 	$(MAKE) -C examples clean
 	$(MAKE) -C tests clean
+	$(MAKE) -C perf clean
 
 distclean: clean
 	rm -rf share doc *.out
+
+dist:
+	-rm -f jsonsl.tar.gz
+	xargs < MANIFEST tar czf jsonsl.tar.gz

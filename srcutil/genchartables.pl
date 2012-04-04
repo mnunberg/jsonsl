@@ -60,6 +60,9 @@ my @allowed_escapes;
         ('"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u');
 }
 
+my @string_passthrough;
+$string_passthrough[ord($_)] = 1 for ('\\','"');
+$string_passthrough[$_] = 1 for (0..19);
 
 ################################################################################
 ################################################################################
@@ -74,7 +77,8 @@ my %HMap = (
     special_body => [undef, \@special_body ],
     whitespace => [ undef, \@wstable ],
     unescapes => [undef, \@unescapes],
-    allowed_escapes => [ undef, \@allowed_escapes]
+    allowed_escapes => [ undef, \@allowed_escapes],
+    string_passthrough => [ undef, \@string_passthrough ]
 );
 
 my $Table;
@@ -82,7 +86,7 @@ my %opthash;
 while (my ($optname,$optarry) = each %HMap) {
     $opthash{$optname} = \$optarry->[0];
 }
-GetOptions(%opthash);
+GetOptions(%opthash, escape_newlines => \my $EscapeNewlines);
 
 while (my ($k,$v) = each %HMap) {
     if ($v->[0]) {
@@ -284,7 +288,11 @@ for (; $i < 255; $i++) {
 foreach my $line (@lines) {
     my $items = $line->{items};
     if (@$items) {
-        printf("/* 0x%02x */ %s, /* 0x%02x */\n",
+        printf("/* 0x%02x */ %s, /* 0x%02x */",
             $line->{begin}, join(",", @$items), $line->{end});
+        if ($EscapeNewlines) {
+            print "  \\";
+        }
+        print "\n";
     }
 }
