@@ -57,7 +57,14 @@ typedef struct jsonsl_jpr_st* jsonsl_jpr_t;
 /**
  * Constant representing the special JSON types.
  * The values are special and aid in speed (the OBJECT and LIST
- * values are the char literals of their openings)
+ * values are the char literals of their openings).
+ *
+ * Their actual value is a character which attempts to resemble
+ * some mnemonic reference to the actual type.
+ *
+ * If new types are added, they must fit into the ASCII printable
+ * range (so they should be AND'd with 0x7f and yield something
+ * meaningful)
  */
 #define JSONSL_XTYPE \
     X(STRING,   '"'|JSONSL_Tf_STRINGY) \
@@ -79,9 +86,7 @@ typedef enum {
 /**
  * Subtypes for T_SPECIAL. We define them as flags
  * because more than one type can be applied to a
- * given object, though in practice we only scan the first
- * character of the 'special' type, so it's only possible
- * to infer a single flag.
+ * given object.
  */
 
 #define JSONSL_XSPECIAL \
@@ -99,13 +104,17 @@ typedef enum {
     JSONSL_SPECIALf_##o = b,
     JSONSL_XSPECIAL
 #undef X
-    JSONSL_SPECIALf_UNKNOWN
+    /* Handy flags for checking */
+    JSONSL_SPECIALf_UNKNOWN = 1 << 8,
+    JSONSL_SPECIALf_NUMERIC = (JSONSL_SPECIALf_SIGNED|JSONSL_SPECIALf_UNSIGNED),
+    JSONSL_SPECIALf_BOOLEAN = (JSONSL_SPECIALf_TRUE|JSONSL_SPECIALf_FALSE)
 } jsonsl_special_t;
 
 
 /**
  * These are the various types of stack (or other) events
  * which will trigger a callback.
+ * Like the type constants, this are also mnemonic
  */
 #define JSONSL_XACTION \
     X(PUSH, '+') \

@@ -73,6 +73,18 @@ JSONSL_API
 void jsonsl_dump_global_metrics(void) { }
 #endif /* JSONSL_USE_METRICS */
 
+#define CASE_DIGITS \
+case '1': \
+case '2': \
+case '3': \
+case '4': \
+case '5': \
+case '6': \
+case '7': \
+case '8': \
+case '9': \
+case '0':
+
 
 /**
  * This table (predeclared) contains characters which are recognized
@@ -213,8 +225,10 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         INVOKE_ERROR(HKEY_EXPECTED); \
     }
 
-#define EXTRACT_NUMERIC \
-
+#define VERIFY_SPECIAL(lit) \
+        if (CUR_CHAR != (lit)[jsn->pos - state->pos_begin]) { \
+            INVOKE_ERROR(SPECIAL_EXPECTED); \
+        }
 
     const jsonsl_uchar_t *c = (jsonsl_uchar_t*)bytes;
     size_t levels_max = jsn->levels_max;
@@ -223,6 +237,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
     jsn->base = bytes;
 
     for (; nbytes; nbytes--, jsn->pos++, c++) {
+        register jsonsl_type_t state_type;
         INCR_METRIC(TOTAL);
         /* Special escape handling for some stuff */
         if (jsn->in_escape) {
@@ -241,7 +256,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         /**
          * Several fast-tracks for common cases:
          */
-        if (state->type & JSONSL_Tf_STRINGY) {
+        state_type = state->type;
+        if (state_type & JSONSL_Tf_STRINGY) {
             /* check if our character cannot ever change our current string state
              * or throw an error
              */
@@ -261,19 +277,10 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             }
             INCR_METRIC(STRINGY_SLOWPATH);
 
-        } else if (state->type == JSONSL_T_SPECIAL) {
+        } else if (state_type == JSONSL_T_SPECIAL) {
             if (state->special_flags & (JSONSL_SPECIALf_SIGNED|JSONSL_SPECIALf_UNSIGNED)) {
                 switch (CUR_CHAR) {
-                case '1':
-                case '2':
-                case '3':
-                case '4':
-                case '5':
-                case '6':
-                case '7':
-                case '8':
-                case '9':
-                case '0':
+                CASE_DIGITS
                     state->nelem = (state->nelem*10) + (CUR_CHAR-0x30);
                     goto GT_NEXT;
 
@@ -288,23 +295,26 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                     goto GT_NEXT;
                 default:
                     if (is_special_end(CUR_CHAR)) {
-                        SPECIAL_POP;
-                        jsn->expecting = ',';
-                        if (is_allowed_whitespace(CUR_CHAR)) {
-                            goto GT_NEXT;
-                        }
-                        goto GT_STRUCTURAL_TOKEN;
+                        goto GT_SPECIAL_POP;
                     }
                     INVOKE_ERROR(INVALID_NUMBER);
                     break;
                 }
             }
             if (!is_special_end(CUR_CHAR)) {
+                /* Verify TRUE, FALSE, NULL */
+                if (state->special_flags == JSONSL_SPECIALf_TRUE) {
+                    VERIFY_SPECIAL("true");
+                } else if (state->special_flags == JSONSL_SPECIALf_FALSE) {
+                    VERIFY_SPECIAL("false");
+                } else if (state->special_flags == JSONSL_SPECIALf_NULL) {
+                    VERIFY_SPECIAL("null");
+                }
                 INCR_METRIC(SPECIAL_FASTPATH);
-                /* Most common case. Inside a number */
                 goto GT_NEXT;
             }
 
+            GT_SPECIAL_POP:
             SPECIAL_POP;
             jsn->expecting = ',';
             if (is_allowed_whitespace(CUR_CHAR)) {
@@ -334,7 +344,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         if (CUR_CHAR == '"') {
             GT_QUOTE:
             jsn->can_insert = 0;
-            switch (state->type) {
+            switch (state_type) {
 
             /* the end of a string or hash key */
             case JSONSL_T_STRING:
@@ -1222,3 +1232,5 @@ static unsigned char _escape_maps[0x100] = {
 };
 
 static unsigned char *Escape_Maps = _escape_maps;
+
+
