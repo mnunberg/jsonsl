@@ -27,6 +27,24 @@ typedef char jsonsl_char_t;
 typedef unsigned char jsonsl_uchar_t;
 #endif /* JSONSL_USE_WCHAR */
 
+/* Stolen from http-parser.h, and possibly others */
+#if defined(_WIN32) && !defined(__MINGW32__) && (!defined(_MSC_VER) || _MSC_VER<1600)
+typedef __int8 int8_t;
+typedef unsigned __int8 uint8_t;
+typedef __int16 int16_t;
+typedef unsigned __int16 uint16_t;
+typedef __int32 int32_t;
+typedef unsigned __int32 uint32_t;
+typedef __int64 int64_t;
+typedef unsigned __int64 uint64_t;
+
+typedef unsigned int size_t;
+typedef int ssize_t;
+#else
+#include <stdint.h>
+#endif
+
+
 #if (!defined(JSONSL_STATE_GENERIC)) && (!defined(JSONSL_STATE_USER_FIELDS))
 #warning "JSONSL_STATE_USER_FIELDS not defined. Define this for extra structure fields"
 #warning "or define JSONSL_STATE_GENERIC"
@@ -107,7 +125,9 @@ typedef enum {
     /* Handy flags for checking */
     JSONSL_SPECIALf_UNKNOWN = 1 << 8,
     JSONSL_SPECIALf_NUMERIC = (JSONSL_SPECIALf_SIGNED|JSONSL_SPECIALf_UNSIGNED),
-    JSONSL_SPECIALf_BOOLEAN = (JSONSL_SPECIALf_TRUE|JSONSL_SPECIALf_FALSE)
+    JSONSL_SPECIALf_BOOLEAN = (JSONSL_SPECIALf_TRUE|JSONSL_SPECIALf_FALSE),
+    /* For non-simple numeric types */
+    JSONSL_SPECIALf_NUMNOINT = (JSONSL_SPECIALf_FLOAT|JSONSL_SPECIALf_EXPONENT)
 } jsonsl_special_t;
 
 
@@ -202,29 +222,6 @@ struct jsonsl_state_st {
     jsonsl_special_t special_flags;
 
     /**
-     * how many elements in the object/list.
-     * For objects (hashes), an element is either
-     * a key or a value. Thus for one complete pair,
-     * nelem will be 2.
-     *
-     * For special types, this will hold the sum of the digits.
-     * This only holds true for values which are simple signed/unsigned
-     * numbers. Otherwise a special flag is set, and extra handling is not
-     * performed.
-     */
-    unsigned long nelem;
-
-
-    /**
-     * Level of recursion into nesting. This is mainly a convenience
-     * variable, as this can technically be deduced from the lexer's
-     * level parameter (though the logic is not that simple)
-     */
-    unsigned int level;
-
-    /*TODO: merge this and special_flags into a union */
-
-    /**
      * Position offset variables. These are relative to jsn->pos.
      * pos_begin is the position at which this state was first pushed
      * to the stack. pos_cur is the position at which return last controlled
@@ -240,6 +237,32 @@ struct jsonsl_state_st {
      * The position at which any immediate child was last POPped
      */
     size_t pos_cur;
+
+
+    /**
+     * Level of recursion into nesting. This is mainly a convenience
+     * variable, as this can technically be deduced from the lexer's
+     * level parameter (though the logic is not that simple)
+     */
+    unsigned int level;
+
+
+    /**
+     * how many elements in the object/list.
+     * For objects (hashes), an element is either
+     * a key or a value. Thus for one complete pair,
+     * nelem will be 2.
+     *
+     * For special types, this will hold the sum of the digits.
+     * This only holds true for values which are simple signed/unsigned
+     * numbers. Otherwise a special flag is set, and extra handling is not
+     * performed.
+     */
+    uint64_t nelem;
+
+
+
+    /*TODO: merge this and special_flags into a union */
 
 
     /**
@@ -262,7 +285,7 @@ struct jsonsl_state_st {
 #else
 
     /**
-     * Otherwise, this is a simple void * pointer for anything yoiu want
+     * Otherwise, this is a simple void * pointer for anything you want
      */
     void *data;
 #endif /* JSONSL_STATE_USER_FIELDS */

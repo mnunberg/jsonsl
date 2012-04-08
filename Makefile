@@ -3,7 +3,7 @@ LDFLAGS=-L$(LIBJSONSL_DIR) -Wl,-rpath $(LIBJSONSL_DIR) -ljsonsl $(PROFILE)
 CFLAGS=\
 	   -Wall -std=gnu89 -pedantic \
 	   -O3 -ggdb3 \
-	   -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC
+	   -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC \
 
 export CFLAGS
 export LDFLAGS
@@ -21,7 +21,7 @@ json_examples_tarball:
 	rm -f json_samples.tgz
 	tar -czf json_samples.tgz share
 
-check: libjsonsl.so share
+check: libjsonsl.so share jsonsl.c
 	JSONSL_QUIET_TESTS=1 $(MAKE) -C tests
 
 bench:

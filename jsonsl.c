@@ -86,6 +86,7 @@ case '9': \
 case '0':
 
 
+
 /**
  * This table (predeclared) contains characters which are recognized
  * non-string values.
@@ -278,7 +279,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             INCR_METRIC(STRINGY_SLOWPATH);
 
         } else if (state_type == JSONSL_T_SPECIAL) {
-            if (state->special_flags & (JSONSL_SPECIALf_SIGNED|JSONSL_SPECIALf_UNSIGNED)) {
+            if (state->special_flags & JSONSL_SPECIALf_NUMERIC) {
                 switch (CUR_CHAR) {
                 CASE_DIGITS
                     state->nelem = (state->nelem*10) + (CUR_CHAR-0x30);
@@ -301,6 +302,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                     break;
                 }
             }
+            /* else if (!NUMERIC) */
             if (!is_special_end(CUR_CHAR)) {
                 /* Verify TRUE, FALSE, NULL */
                 if (state->special_flags == JSONSL_SPECIALf_TRUE) {
