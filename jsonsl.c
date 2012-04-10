@@ -191,7 +191,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
 #define CALLBACK_AND_POP_NOPOS(T) \
         state->pos_cur = jsn->pos; \
-        CALLBACK(T, POP); \
+        DO_CALLBACK(T, POP); \
         state->nescapes = 0; \
         state = jsn->stack + (--jsn->level);
 
@@ -206,7 +206,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
 #define CUR_CHAR (*(jsonsl_uchar_t*)c)
 
-#define CALLBACK(T, action) \
+#define DO_CALLBACK(T, action) \
     if (jsn->call_##T && \
             jsn->max_callback_level > state->level && \
             state->ignore_callback == 0) { \
@@ -246,7 +246,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             if (!is_allowed_escape(CUR_CHAR)) {
                 INVOKE_ERROR(ESCAPE_INVALID);
             } else if (CUR_CHAR == 'u') {
-                CALLBACK(UESCAPE, UESCAPE);
+                DO_CALLBACK(UESCAPE, UESCAPE);
                 if (jsn->return_UESCAPE) {
                     return;
                 }
@@ -368,7 +368,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
                     STACK_PUSH;
                     state->type = JSONSL_T_STRING;
-                    CALLBACK(STRING, PUSH);
+                    DO_CALLBACK(STRING, PUSH);
 
                 } else {
                     /* hash key */
@@ -380,7 +380,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
                     STACK_PUSH;
                     state->type = JSONSL_T_HKEY;
-                    CALLBACK(HKEY, PUSH);
+                    DO_CALLBACK(HKEY, PUSH);
                 }
                 goto GT_NEXT;
 
@@ -390,7 +390,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 state->type = JSONSL_T_STRING;
                 jsn->expecting = ',';
                 jsn->tok_last = 0;
-                CALLBACK(STRING, PUSH);
+                DO_CALLBACK(STRING, PUSH);
                 goto GT_NEXT;
 
             case JSONSL_T_SPECIAL:
@@ -473,9 +473,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 jsn->expecting = '"';
             }
             if (CUR_CHAR == JSONSL_T_OBJECT) {
-                CALLBACK(OBJECT, PUSH);
+                DO_CALLBACK(OBJECT, PUSH);
             } else {
-                CALLBACK(LIST, PUSH);
+                DO_CALLBACK(LIST, PUSH);
             }
             jsn->tok_last = 0;
             goto GT_NEXT;
@@ -496,12 +496,12 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 if (state->type != '[') {
                     INVOKE_ERROR(BRACKET_MISMATCH);
                 }
-                CALLBACK(LIST, POP);
+                DO_CALLBACK(LIST, POP);
             } else {
                 if (state->type != '{') {
                     INVOKE_ERROR(BRACKET_MISMATCH);
                 }
-                CALLBACK(OBJECT, POP);
+                DO_CALLBACK(OBJECT, POP);
             }
             state = jsn->stack + jsn->level;
             state->pos_cur = jsn->pos;
@@ -543,7 +543,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 } else {
                     state->nelem = 0;
                 }
-                CALLBACK(SPECIAL, PUSH);
+                DO_CALLBACK(SPECIAL, PUSH);
             }
             goto GT_NEXT;
         }
