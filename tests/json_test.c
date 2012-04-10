@@ -1,9 +1,6 @@
 #include "jsonsl.h"
 #include <stdio.h>
 #include <sys/types.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
 #include <assert.h>
 
 static int WantFail = 0;
@@ -81,32 +78,17 @@ int error_callback(jsonsl_t jsn,
 void parse_single_file(const char *path)
 {
     char *buf, *bufp;
-    struct stat sb;
-    int status;
+    long fsize;
     size_t nread = 0;
-    int fd;
+    FILE *fh;
     jsonsl_t jsn;
     WantError = 0;
-
     /* open our file */
-    fd = open(path, O_RDONLY);
-    if (fd == -1) {
+    fh = fopen(path, "r");
+    if (fh == NULL) {
         perror(path);
         return;
     }
-
-    status = fstat(fd, &sb);
-    if (S_ISDIR(sb.st_mode)) {
-        fprintf(stderr, "\tS_ISDIR..\n");
-        close(fd);
-        return;
-    }
-    assert(status == 0);
-    assert(sb.st_size);
-    assert(sb.st_size < 0x1000000);
-    buf = malloc(sb.st_size);
-    bufp = buf;
-
 
     /* Declare that we will support up to 512 nesting levels.
      * Each level of nesting requires about ~40 bytes (allocated at initialization)
@@ -130,16 +112,29 @@ void parse_single_file(const char *path)
      * To avoid recomputing offsets and relative positioning,
      * we will maintain the buffer, but this is not strictly required.
      */
-
-    while ( (nread = read(fd, bufp, 4096)) > 0) {
+    fseek(fh, 0, SEEK_END);
+    fsize = ftell(fh);
+    if (fsize == -1) {
+        perror(path);
+        fclose(fh);
+        return;
+    }
+    assert(fsize < 0x1000000);
+    buf = malloc(fsize);
+    bufp = buf;
+    fseek(fh, 0, SEEK_SET);
+    while ( (nread = fread(bufp, 1, 4096, fh)) ) {
         jsonsl_feed(jsn, bufp, nread);
         bufp += nread;
     }
+
     if (WantFail && WantError == 0) {
         fprintf(stderr, "Expected error but didn't find any!\n");
         abort();
     }
     jsonsl_destroy(jsn);
+    fclose(fh);
+
     free(buf);
 }
 
