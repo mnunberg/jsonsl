@@ -210,7 +210,14 @@ typedef enum {
 
 
 /**
- * A state is a single level of the stack
+ * A state is a single level of the stack.
+ * Non-private data (i.e. the 'data' field, see the STATE_GENERIC section)
+ * will remain in tact until the item is popped.
+ *
+ * As a result, it means a parent state object may be accessed from a child
+ * object, (the parents fields will all be valid). This allows a user to create
+ * an ad-hoc hierarchy on top of the JSON one.
+ *
  */
 struct jsonsl_state_st {
     /**
@@ -234,7 +241,8 @@ struct jsonsl_state_st {
     size_t pos_begin;
 
     /**
-     * The position at which any immediate child was last POPped
+     * The position at which any immediate child was last POPped.
+     * Note that this field is only set when the item is popped.
      */
     size_t pos_cur;
 
@@ -278,7 +286,14 @@ struct jsonsl_state_st {
 
     /**
      * Put anything you want here. if JSONSL_STATE_USER_FIELDS is here, then
-     * the macro expansion happens here
+     * the macro expansion happens here.
+     *
+     * You can use these fields to store hierarchical or 'tagging' information
+     * for specific objects.
+     *
+     * See the documentation above for the lifetime of the state object (i.e.
+     * if the private data points to allocated memory, it should be freed
+     * when the object is popped, as the state object will be re-used)
      */
 #ifndef JSONSL_STATE_GENERIC
     JSONSL_STATE_USER_FIELDS
@@ -670,6 +685,10 @@ void jsonsl_jpr_destroy(jsonsl_jpr_t jpr);
  * empty.
  * @param nkey - the length of the key. If the parent is an array (T_LIST), then
  * this should be the current index.
+ *
+ * NOTE: The key of the child means any kind of associative data related to the
+ * element. Thus: <<< { "foo" : [ >>,
+ * the opening array's key is "foo".
  *
  * @return a status constant. This indicates whether a match was excluded, possible,
  * or successful.

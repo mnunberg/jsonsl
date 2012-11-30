@@ -193,6 +193,152 @@ you compile your project with C<jsonsl.c> directly.
 If you wish to use the 'generic' mode, make sure to
 C<#define> or C<-D> the C<JSONSL_STATE_GENERIC> macro.
 
+Some notes regarding usage will follow:
+
+=head2 Position and Offset Tracking
+
+The state object contains some C<pos> variables. These variables contain the
+position relative to the amount of total bytes that the C<jsonsl_t> object has
+been fed since creation (or since C<reset>) has been called. Thus, in order to
+make sense of these variables, you must do one of two things
+
+=over
+
+=item Buffer the entire stream (simpler, but not recommended)
+
+This way, the offsets declared in the C<pos_cur> and C<pos_begin> variables can
+be directly applied as offsets to the actual buffer.
+
+Of course this is not the recommended option; since C<jsonsl> is a streaming
+parser, you are likely using it because you I<don't> want to buffer the entire
+stream
+
+=item Note the first valid position in the existing buffer
+
+This technique requires the user to keep track of the first valid position within
+the current buffer. This is useful for tracking the beginnings and ends of strings.
+
+Typically you will need a simple function or macro and some variables which do
+the following:
+
+
+=over
+
+=item *
+
+Contain the minimum valid position in the buffer, e.g. C<min_available>
+
+This is initially set to 0, and increases as we discard data (see later)
+
+=item *
+
+Allow callbacks to request an advancement of the position. This means
+that your context object contains a "min_needed" variable. For example,
+one might have a C<PUSH> callback for the beginning of a string. The push
+callback will set the C<min_needed> variable to the position
+of the beginning of the string (i.e. C<<<state->pos_begin>>>). In a corresponding
+C<POP> callback, the string is read from an internal buffer (whose first valid
+position is no greater than C<<<state->pos_begin>>>) with a length of 
+C<<<state->pos_cur - state->pos_begin>>> bytes. Once the string is read, it is
+no longer needed, and the callback then updates the C<min_needed> variable
+to the state's C<pos_cur>.
+
+=item *
+
+After C<jsonsl_feed> is called, determine if the input buffer needs to be
+adjusted. This means to determine whether the C<min_needed> variable has
+been set to something larger than the C<min_available> variable. If this
+condition is true, it means part of the buffer can be discarded. The amount
+of bytes to discard from the beginning will be the difference between these
+two variables. The length of the buffer also becomes shorted by the difference.
+
+Once the bytes are discarded (one can use a simple C<memmove>),
+the C<min_available> variable is set to the C<min_needed> value.
+
+=item *
+
+To demonstrate this, let's make a sample structure:
+
+    struct parse_context {
+        size_t min_needed;
+        size_t min_available;
+
+        char *buffer;
+        size_t buffer_len;
+    }
+
+The C<buffer> is the buffer which is available to the callbacks (e.g. by making
+this struct be the value of the C<data> field in the C<jsonsl_t>).
+
+It is possible to write a simple function which will get a slice of the buffer,
+given the absolute offsets from the C<state> variable:
+
+    void get_state_buffer(struct parse_context *ctx, struct jsonsl_state_st *state)
+    {
+        size_t offset = state->pos_begin - ctx->min_available;
+        return ctx->buffer + offset;
+    }
+
+Of course this function would probably like to do some error checking to ensure
+that for example, the C<state>'s C<pos_begin> is not less than the C<min_available>
+of the C<ctx>.
+
+=back
+
+=back
+
+=head2 Notes on String States
+
+It is possible to get the I<length> of a string by getting the difference
+between its two C<pos> variables (i.e. C<pos_begin> and C<pos_cur>). However
+it should be noted that the C<pos_begin> points to the position of the
+opening C<"> (quote) and the C<pos_end> points to the position of the
+closing C<"> (quote). Thus to get the actual raw string, one must
+increase the buffer pointer and decrease the length.
+
+The logic may be encapsulated in a macro
+
+    #define NORMALIZE_OFFSETS(buf, len) (buf)++; (len)++;
+    /* use it */
+    char *buf = get_state_buffer(ctx, state);
+    size_t len = state->pos_cur - state->pos_begin;
+    NORMALIZE_OFFSETS(buf, len);
+
+Note that care should be taken not to perform this on I<literals> like numbers,
+booleans, and C<null>s.
+
+=head2 Notes on I<jsonpointer>
+
+The C<jsonpointer> implementation is designed to work with a stream and works
+very nicely with the callbacks. It relies on the caller incrementally providing
+C<jpr> with information (e.g. via C<jsonsl_jpr_match_state>) about each element
+in the JSON tree.
+
+Interally it builds a graph based on inputs from each item in the JSON tree;
+relying on the fact that an item will only be a C<MATCH_POSSIBLE> or
+C<MATCH_COMPLETE> if its parent was also a C<MATCH_POSSIBLE>.
+
+Thus the C<jpr> functions must be fed with I<hierarchical> data and information.
+
+In general, items need their I<key> information. The I<key> exists as the following
+
+=over 
+
+=item Object (dictionary) values are passed with their keys
+
+This means you must buffer the keys
+
+=item Array elements are passed with their indices
+
+C<jsonsl_jpr_match_state> does this for you automatically
+
+=item Primitives without any children are not passed
+
+C<jsonpointer> only makes sense when searching for data I<under> a key.
+Passing a primitive (i.e. boolean, number, or non-key string) does not make sense
+
+=back
+
 =head2 UNICODE
 
 While JSONSL does not support unicode directly (it does not
