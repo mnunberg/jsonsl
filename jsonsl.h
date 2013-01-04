@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <sys/types.h>
 #include <wchar.h>
@@ -28,7 +29,7 @@ typedef unsigned char jsonsl_uchar_t;
 #endif /* JSONSL_USE_WCHAR */
 
 /* Stolen from http-parser.h, and possibly others */
-#if defined(_WIN32) && !defined(__MINGW32__) && (!defined(_MSC_VER) || _MSC_VER<1600)
+#if defined(_WIN32) && !defined(__MINGW32__) 
 typedef __int8 int8_t;
 typedef unsigned __int8 uint8_t;
 typedef __int16 int16_t;
@@ -37,9 +38,10 @@ typedef __int32 int32_t;
 typedef unsigned __int32 uint32_t;
 typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
-
+#if !defined(_MSC_VER) || _MSC_VER<1400
 typedef unsigned int size_t;
 typedef int ssize_t;
+#endif
 #else
 #include <stdint.h>
 #endif
@@ -380,7 +382,7 @@ struct jsonsl_st {
     /** Public, read-only */
 
     /** This is the current level of the stack */
-    int level;
+    unsigned int level;
 
     /**
      * This is the current position, relative to the beginning
@@ -463,11 +465,11 @@ struct jsonsl_st {
     unsigned int levels_max;
 
 #ifndef JSONSL_NO_JPR
-    unsigned int jpr_count;
+    size_t jpr_count;
     jsonsl_jpr_t *jprs;
 
     /* Root pointer for JPR matching information */
-    int *jpr_root;
+    size_t *jpr_root;
 #endif /* JSONSL_NO_JPR */
     /*@}*/
 

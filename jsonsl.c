@@ -137,7 +137,7 @@ jsonsl_t jsonsl_new(int nlevels)
 JSONSL_API
 void jsonsl_reset(jsonsl_t jsn)
 {
-    int ii;
+    unsigned int ii;
     jsn->tok_last = 0;
     jsn->can_insert = 1;
     jsn->pos = 0;
@@ -655,7 +655,7 @@ populate_component(char *in,
         pctval = strtoul(c+1, NULL, 16);
         *(c+3) = origc;
 
-        *outp = pctval;
+        *outp = (char) pctval;
         c += 2;
         continue;
 
@@ -838,7 +838,7 @@ void jsonsl_jpr_match_state_init(jsonsl_t jsn,
                                  jsonsl_jpr_t *jprs,
                                  size_t njprs)
 {
-    int ii, *firstjmp;
+    size_t ii, *firstjmp;
     if (njprs == 0) {
         return;
     }
@@ -892,8 +892,8 @@ jsonsl_jpr_t jsonsl_jpr_match_state(jsonsl_t jsn,
     jsonsl_jpr_t ret = NULL;
 
     /* Jump and JPR tables for our own state and the parent state */
-    int *jmptable, *pjmptable;
-    int jmp_cur, ii, ourjmpidx;
+    size_t *jmptable, *pjmptable;
+    size_t jmp_cur, ii, ourjmpidx;
 
     if (!jsn->jpr_root) {
         *out = JSONSL_MATCH_NOMATCH;
@@ -913,7 +913,7 @@ jsonsl_jpr_t jsonsl_jpr_match_state(jsonsl_t jsn,
     parent_state = jsn->stack + state->level - 1;
 
     if (parent_state->type == JSONSL_T_LIST) {
-        nkey = parent_state->nelem;
+        nkey = (size_t) parent_state->nelem;
     }
 
     *jmptable = 0;
@@ -987,7 +987,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
 #define UNESCAPE_BAIL(e,offset) \
     *err = JSONSL_ERROR_##e; \
     if (errat) { \
-        *errat = (const char*)(c+ (ssize_t)(offset)); \
+        *errat = (const char*)(c+ (ptrdiff_t)(offset)); \
     } \
     return 0;
 
