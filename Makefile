@@ -1,16 +1,37 @@
+prefix = /opt/local
+exec_prefix= ${prefix}
+libdir = $(exec_prefix)/lib
+
+INSTALL = /usr/bin/install -c
+
+INSTALL_PROGRAM = $(INSTALL)
+
+ifeq ($(patsubst gcc%,gcc,$(notdir $(basename $(CC)))),gcc)
+GCCFLAGS=-ggdb3
+endif
+
 LIBJSONSL_DIR+=$(shell pwd)
 LDFLAGS+=-L$(LIBJSONSL_DIR) -Wl,-rpath $(LIBJSONSL_DIR)
 CFLAGS+=\
 	   -Wall -std=gnu89 -pedantic \
-	   -O3 -ggdb3 \
+	   -O3 $(GCCFLAGS) \
 	   -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC \
 
 export CFLAGS
 export LDFLAGS
 
+DYLIBPREFIX=lib
+ifeq ($(shell uname -s),Darwin)
+DYLIBSUFFIX=.dylib
+DYLIBFLAGS=-fPIC -fno-common -dynamiclib -Wl,-install_name,$(libdir)/$(LIB_FQNAME)
+else
+DYLIBSUFFIX=.so
+DYLIBFLAGS=-shared -fPIC
+endif
+
 LIB_BASENAME=jsonsl
-LIB_PREFIX?=lib
-LIB_SUFFIX?=.so
+LIB_PREFIX?=$(DYLIBPREFIX)
+LIB_SUFFIX?=$(DYLIBSUFFIX)
 LIB_FQNAME = $(LIB_PREFIX)$(LIB_BASENAME)$(LIB_SUFFIX)
 
 ifdef STATIC_LIB
@@ -18,10 +39,13 @@ ifdef STATIC_LIB
 	LIBFLAGS=-c
 else
 	LDFLAGS+=-l$(LIB_BASENAME)
-	LIBFLAGS=-shared -fPIC
+	LIBFLAGS=$(DYLIBFLAGS)
 endif
 
 all: $(LIB_FQNAME)
+
+install: all
+	$(INSTALL) $(LIB_FQNAME) $(DESTDIR)$(libdir)
 
 .PHONY: examples
 examples:
