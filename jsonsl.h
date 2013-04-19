@@ -48,8 +48,6 @@ typedef int ssize_t;
 
 
 #if (!defined(JSONSL_STATE_GENERIC)) && (!defined(JSONSL_STATE_USER_FIELDS))
-#warning "JSONSL_STATE_USER_FIELDS not defined. Define this for extra structure fields"
-#warning "or define JSONSL_STATE_GENERIC"
 #define JSONSL_STATE_GENERIC
 #endif /* !defined JSONSL_STATE_GENERIC */
 
