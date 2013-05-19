@@ -1,0 +1,8 @@
+*.so
+*.dll
+*.exe
+*.dylib
+share
+tests/jpr_test
+tests/json_test
+tests/unescape
