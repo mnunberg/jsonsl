@@ -1,3 +1,9 @@
+=begin html
+
+<img src="https://api.travis-ci.org/mnunberg/jsonsl.png"/>
+
+=end html
+
 =head1 JSONSL
 
 JSON Stateful (or Simple, or Stacked, or Searchable, or Streaming) Lexer
