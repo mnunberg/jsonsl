@@ -56,8 +56,17 @@ typedef int ssize_t;
 #endif /* JSONSL_STATE_GENERIC */
 
 #ifndef JSONSL_API
+/**
+ * We require a /DJSONSL_DLL so that users already using this as a static
+ * or embedded library don't get confused
+ */
+#ifdef _WIN32 && defined(JSONSL_DLL)
+#define JSONSL_API __declspec(dllexport)
+#else
 #define JSONSL_API
-#endif /* JSONSL_API */
+#endif /* _WIN32 */
+
+#endif /* !JSONSL_API */
 
 #define JSONSL_MAX_LEVELS 512
 
