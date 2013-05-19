@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include "all-tests.h"
 
 #define _JSTR(e) \
     "\"" #e "\""
@@ -170,7 +171,7 @@ static void lexjpr(void)
     jsonsl_feed(jsn, SampleJSON, sizeof(SampleJSON)-1);
 }
 
-int main(void)
+JSONSL_TEST_JPR_FUNC
 {
     printf("%s\n", SampleJSON);
     if (getenv("JSONSL_QUIET_TESTS")) {

@@ -1,7 +1,10 @@
 #include "jsonsl.h"
 #include <stdio.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <assert.h>
+#include <errno.h>
+#include "all-tests.h"
 
 static int WantFail = 0;
 static jsonsl_error_t WantError = 0;
@@ -138,11 +141,11 @@ void parse_single_file(const char *path)
     free(buf);
 }
 
-int main(int argc, char **argv)
+JSONSL_TEST_JSON_FUNC
 {
     int ii;
     if (getenv("JSONSL_QUIET_TESTS")) {
-        freopen("/dev/null", "w", stdout);
+        freopen(DEVNULL, "w", stdout);
     }
     if (getenv("JSONSL_FAIL_TESTS")) {
         printf("Want Fail..\n");
@@ -154,6 +157,20 @@ int main(int argc, char **argv)
     }
 
     for (ii = 1; ii < argc && argv[ii]; ii++) {
+        int rv;
+        struct stat sb = { 0 };
+        rv = stat(argv[ii], &sb);
+        if (rv == -1) {
+            fprintf(stderr, "Couldn't stat '%s': %s\n",
+                    argv[ii], strerror(errno));
+            return EXIT_FAILURE;
+        }
+
+        if (S_ISDIR(sb.st_mode)) {
+            fprintf(stderr, "Skipping directory '%s'\n", argv[ii]);
+            continue;
+        }
+
         fprintf(stderr, "==== %-40s ====\n", argv[ii]);
         parse_single_file(argv[ii]);
     }

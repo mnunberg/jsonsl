@@ -5,6 +5,7 @@
 #include <wchar.h>
 #include <locale.h>
 #include <string.h>
+#include "all-tests.h"
 
 static size_t res;
 static jsonsl_error_t err;
@@ -113,7 +114,7 @@ void test_invalid_escape(void)
     free(out);
 }
 
-int main(void)
+JSONSL_TEST_UNESCAPE_FUNC
 {
     char *curlocale = setlocale(LC_ALL, "");
     test_single_uescape();
@@ -121,7 +122,8 @@ int main(void)
     if (curlocale && strstr(curlocale, "UTF-8") != NULL) {
         test_multibyte_escape();
     } else {
-        fprintf(stderr, "Skipping multibyte tests because LC_ALL is not set to UTF8");
+        fprintf(stderr,
+                "Skipping multibyte tests because LC_ALL is not set to UTF8\n");
     }
     test_ignore_escape();
     test_replacement_escape();
