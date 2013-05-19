@@ -355,8 +355,21 @@ instead of the good 'ole C<char>. Of course you would need to
 handle processing the stream correctly to make sure the multibyte
 stream was complete.
 
+=head2 WINDOWS
+
+JSONSL Now has a visual studio C<.sln> and C<.vcxproj> files in the
+C<vs> directory.
+
+If you wish to use JSONSL as a DLL, be sure to define the macro
+C<JSONSL_DLL> which will properly decorate the prototypes with
+C<__declspec(dllexport)>.
+
+You can also run the tests on windows using the C<jsonsl-tests>
+project. You will need to manually pass in the sample input files to
+be tested, however. In the future, I hope to automate this process.
+
 =head1 AUTHOR AND COPYRIGHT
 
-Copyright (C) 2012 M. Nunberg.
+Copyright (C) 2012, 2013 M. Nunberg.
 
 See C<LICENSE> for license information.
