@@ -85,8 +85,17 @@ void parse_single_file(const char *path)
     size_t nread = 0;
     FILE *fh;
     jsonsl_t jsn;
+    struct stat sb = { 0 };
     WantError = 0;
     /* open our file */
+    if (stat(path, &sb) == -1) {
+        perror(path);
+        return;
+    }
+    if (S_ISDIR(sb.st_mode)) {
+        fprintf(stderr, "Skipping directory '%s'\n", path);
+        return;
+    }
     fh = fopen(path, "r");
     if (fh == NULL) {
         perror(path);
