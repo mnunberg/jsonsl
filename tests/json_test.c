@@ -156,10 +156,14 @@ JSONSL_TEST_JSON_FUNC
     if (getenv("JSONSL_QUIET_TESTS")) {
         freopen(DEVNULL, "w", stdout);
     }
+#ifdef JSONSL_FAILURE_TESTS
+    WantFail = 1;
+#else
     if (getenv("JSONSL_FAIL_TESTS")) {
         printf("Want Fail..\n");
         WantFail = 1;
     }
+#endif
     if (argc < 2) {
         fprintf(stderr, "Usage: %s FILES..\n", argv[0]);
         exit(EXIT_FAILURE);
