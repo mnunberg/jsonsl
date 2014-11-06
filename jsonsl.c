@@ -818,9 +818,7 @@ jsonsl_jpr_match(jsonsl_jpr_t jpr,
 
     /* Check string comparison */
     cmpret = strncmp(p_component->pstr, key, nkey);
-    if (cmpret != 0) {
-        return JSONSL_MATCH_NOMATCH;
-    } else {
+    if (cmpret == 0) {
         if (parent_level == jpr->ncomponents-1) {
             return JSONSL_MATCH_COMPLETE;
         } else {
@@ -828,8 +826,6 @@ jsonsl_jpr_match(jsonsl_jpr_t jpr,
         }
     }
 
-    /* Never reached, but make the compiler happy */
-    abort();
     return JSONSL_MATCH_NOMATCH;
 }
 
