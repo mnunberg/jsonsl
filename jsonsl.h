@@ -638,7 +638,8 @@ void jsonsl_dump_global_metrics(void);
 #define JSONSL_XMATCH \
     X(COMPLETE,1) \
     X(POSSIBLE,0) \
-    X(NOMATCH,-1)
+    X(NOMATCH,-1) \
+    X(TYPE_MISMATCH, -2)
 
 typedef enum {
 
@@ -662,11 +663,19 @@ typedef enum {
 } jsonsl_jpr_type_t;
 
 struct jsonsl_jpr_component_st {
+    /** The string the component points to */
     char *pstr;
     /** if this is a numeric type, the number is 'cached' here */
     unsigned long idx;
+    /** The length of the string */
     size_t len;
+    /** The type of component (NUMERIC or STRING) */
     jsonsl_jpr_type_t ptype;
+
+    /** Set this to true to enforce type checking between dict keys and array
+     * indices. jsonsl_jpr_match() will return TYPE_MISMATCH if it detects
+     * that an array index is actually a child of a dictionary. */
+    short is_arridx;
 };
 
 struct jsonsl_jpr_st {

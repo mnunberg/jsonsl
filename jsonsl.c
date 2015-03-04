@@ -825,17 +825,26 @@ jsonsl_jpr_match(jsonsl_jpr_t jpr,
         }
     }
 
-    /* Check numeric array index */
-    if (p_component->ptype == JSONSL_PATH_NUMERIC
-            && parent_type == JSONSL_T_LIST) {
-        if (p_component->idx != nkey) {
-            return JSONSL_MATCH_NOMATCH;
-        } else {
-            if (parent_level == jpr->ncomponents-1) {
-                return JSONSL_MATCH_COMPLETE;
+    /* Check numeric array index. This gets its special block so we can avoid
+     * string comparisons */
+    if (p_component->ptype == JSONSL_PATH_NUMERIC) {
+        if (parent_type == JSONSL_T_LIST) {
+            if (p_component->idx != nkey) {
+                /* Wrong index */
+                return JSONSL_MATCH_NOMATCH;
             } else {
-                return JSONSL_MATCH_POSSIBLE;
+                if (parent_level == jpr->ncomponents-1) {
+                    /* This is the last element of the path */
+                    return JSONSL_MATCH_COMPLETE;
+                } else {
+                    /* Intermediate element */
+                    return JSONSL_MATCH_POSSIBLE;
+                }
             }
+        } else if (p_component->is_arridx) {
+            /* Numeric and an array index (set explicitly by user). But not
+             * a list for a parent */
+            return JSONSL_MATCH_TYPE_MISMATCH;
         }
     }
 
