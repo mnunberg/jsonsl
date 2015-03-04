@@ -253,23 +253,21 @@ struct jsonsl_state_st {
     jsonsl_special_t special_flags;
 
     /**
-     * Position offset variables. These are relative to jsn->pos.
-     * pos_begin is the position at which this state was first pushed
-     * to the stack. pos_cur is the position at which return last controlled
-     * to this state (i.e. an immediate child state was popped from it).
-     */
-
-    /**
-     * The position at which this state was first PUSHed
+     * The position (in terms of number of bytes since the first call to
+     * jsonsl_feed()) at which the state was first pushed. This includes
+     * opening tokens, if applicable.
+     *
+     * @note For strings (i.e. type & JSONSL_Tf_STRINGY is nonzero) this will
+     * be the position of the first quote.
+     *
+     * @see jsonsl_st::pos which contains the _current_ position and can be
+     * used during a POP callback to get the length of the element.
      */
     size_t pos_begin;
 
-    /**
-     * The position at which any immediate child was last POPped.
-     * Note that this field is only set when the item is popped.
-     */
+    /**FIXME: This is redundant as the same information can be derived from
+     * jsonsl_st::pos at pop-time */
     size_t pos_cur;
-
 
     /**
      * Level of recursion into nesting. This is mainly a convenience
