@@ -368,6 +368,20 @@ You can also run the tests on windows using the C<jsonsl-tests>
 project. You will need to manually pass in the sample input files to
 be tested, however. In the future, I hope to automate this process.
 
+=head2 API AND ABI STABILITY, AND PACKAGING NOTES
+
+I<JSONSL> will attempt to maintain a stable API, but not a stable ABI.
+
+The general distribution model of JSONSL (A single source file and a single
+header) is designed in such a manner to allow the application to I<embed> the
+relevant parts in the application.
+
+For speed benefits it may also be desirable to actually have the C<jsonsl.c>
+file embedded in the same translation unit as the user-side code calling into
+I<JSONSL> itself. In such use cases, the C<JSONSL_API> macro may be defined as
+C<static inline>.
+
+
 =head1 AUTHOR AND COPYRIGHT
 
 Copyright (C) 2012, 2013 M. Nunberg.
