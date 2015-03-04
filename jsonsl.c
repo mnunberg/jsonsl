@@ -558,6 +558,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 JSONSL_API
 const char* jsonsl_strerror(jsonsl_error_t err)
 {
+    if (err == JSONSL_ERROR_SUCCESS) {
+        return "SUCCESS";
+    }
 #define X(t) \
     if (err == JSONSL_ERROR_##t) \
         return #t;

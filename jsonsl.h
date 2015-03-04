@@ -163,7 +163,6 @@ typedef enum {
  * Various errors which may be thrown while parsing JSON
  */
 #define JSONSL_XERR \
-    X(SUCCESS) \
 /* Trailing garbage characters */ \
     X(GARBAGE_TRAILING) \
 /* We were expecting a 'special' (numeric, true, false, null) */ \
@@ -210,6 +209,7 @@ typedef enum {
     X(JPR_NOROOT)
 
 typedef enum {
+    JSONSL_ERROR_SUCCESS = 0,
 #define X(e) \
     JSONSL_ERROR_##e,
     JSONSL_XERR
