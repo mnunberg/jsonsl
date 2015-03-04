@@ -391,6 +391,9 @@ struct jsonsl_st {
     /** This is the current level of the stack */
     unsigned int level;
 
+    /** Flag set to indicate we should stop processing */
+    unsigned int stopfl;
+
     /**
      * This is the current position, relative to the beginning
      * of the stream.
@@ -536,6 +539,9 @@ void jsonsl_destroy(jsonsl_t jsn);
     ? (jsn->stack + (cur->level-1)) \
     : NULL
 
+/**Call to instruct the parser to stop parsing and return. This is valid
+ * only from within a callback */
+#define jsonsl_stop(jsn) (jsn)->stopfl = 1
 
 /**
  * This enables receiving callbacks on all events. Doesn't do

@@ -142,6 +142,7 @@ void jsonsl_reset(jsonsl_t jsn)
     jsn->can_insert = 1;
     jsn->pos = 0;
     jsn->level = 0;
+    jsn->stopfl = 0;
     jsn->in_escape = 0;
     jsn->expecting = 0;
 
@@ -216,6 +217,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         } else if (jsn->action_callback) { \
             jsn->action_callback(jsn, JSONSL_ACTION_##action, state, (jsonsl_char_t*)c); \
         } \
+        if (jsn->stopfl) { return; } \
     }
 
     /**
