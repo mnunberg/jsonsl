@@ -206,7 +206,9 @@ typedef enum {
 /* Duplicate slash */ \
     X(JPR_DUPSLASH) \
 /* No leading root */ \
-    X(JPR_NOROOT)
+    X(JPR_NOROOT) \
+/* Allocation failure */ \
+    X(ENOMEM)
 
 typedef enum {
     JSONSL_ERROR_SUCCESS = 0,
