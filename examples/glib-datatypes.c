@@ -225,7 +225,7 @@ cleanup_closing_element(jsonsl_t jsn,
     }
 
     if (DumpIncremental) {
-        struct objgraph_st *objgraph = (struct objgraph*)jsn->data;
+        struct objgraph_st *objgraph = jsn->data;
         printf("Incremental dump at input position %lu\n", jsn->pos);
         dump_element(objgraph->root, 0);
     }
@@ -310,7 +310,7 @@ static void parse_one_file(const char *path)
     jsn->data = &graph;
     jsn->max_callback_level = MaxDescentLevel;
 
-    memset(&graph, 0, sizeof(&graph));
+    memset(&graph, 0, sizeof(graph));
 
     bufp = buf;
     while ( (nread = read(fd, bufp, 4096)) > 0) {

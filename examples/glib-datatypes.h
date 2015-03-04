@@ -1,4 +1,4 @@
-#include <jsonsl.h>
+#include <jsonsl.c>
 #include <glib.h>
 
 #define _XTYPE_ALL \

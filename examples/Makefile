@@ -1,6 +1,6 @@
 all: glib-datatypes
 
-CFLAGS+=$(shell pkg-config glib-2.0 --cflags)
+CFLAGS+=$(shell pkg-config glib-2.0 --cflags) -I../
 LDFLAGS+=$(shell pkg-config glib-2.0 --libs)
 
 glib-datatypes: glib-datatypes.c
