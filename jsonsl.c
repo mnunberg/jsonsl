@@ -684,19 +684,21 @@ JSONSL_API
 jsonsl_jpr_t
 jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
 {
-    char *my_copy;
+    char *my_copy = NULL;
     int count, curidx;
-    struct jsonsl_jpr_st *ret;
-    struct jsonsl_jpr_component_st *components;
+    struct jsonsl_jpr_st *ret = NULL;
+    struct jsonsl_jpr_component_st *components = NULL;
     size_t origlen;
     jsonsl_error_t errstacked;
+
+#define JPR_BAIL(err) *errp = err; goto GT_ERROR;
 
     if (errp == NULL) {
         errp = &errstacked;
     }
 
     if (path == NULL || *path != '/') {
-        *errp = JSONSL_ERROR_JPR_NOROOT;
+        JPR_BAIL(JSONSL_ERROR_JPR_NOROOT);
         return NULL;
     }
 
@@ -708,8 +710,7 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
             if (*c == '/') {
                 count++;
                 if (*(c+1) == '/') {
-                    *errp = JSONSL_ERROR_JPR_DUPSLASH;
-                    return NULL;
+                    JPR_BAIL(JSONSL_ERROR_JPR_DUPSLASH);
                 }
             }
         }
@@ -719,7 +720,15 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
     }
 
     components = malloc(sizeof(*components) * count);
+    if (!components) {
+        JPR_BAIL(JSONSL_ERROR_ENOMEM);
+    }
+
     my_copy = malloc(strlen(path) + 1);
+    if (!my_copy) {
+        JPR_BAIL(JSONSL_ERROR_ENOMEM);
+    }
+
     strcpy(my_copy, path);
 
     components[0].ptype = JSONSL_PATH_ROOT;
@@ -738,9 +747,7 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
         }
 
         if (pathret == JSONSL_PATH_INVALID) {
-            free(components);
-            free(my_copy);
-            return NULL;
+            JPR_BAIL(JSONSL_ERROR_JPR_BADPATH);
         }
     } else {
         curidx = 1;
@@ -749,14 +756,30 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
     path--; /*revert path to leading '/' */
     origlen = strlen(path) + 1;
     ret = malloc(sizeof(*ret));
+    if (!ret) {
+        JPR_BAIL(JSONSL_ERROR_ENOMEM);
+    }
+    ret->orig = malloc(origlen);
+    if (!ret->orig) {
+        JPR_BAIL(JSONSL_ERROR_ENOMEM);
+    }
     ret->components = components;
     ret->ncomponents = curidx;
     ret->basestr = my_copy;
-    ret->orig = malloc(origlen);
     ret->norig = origlen-1;
     strcpy(ret->orig, path);
 
     return ret;
+
+    GT_ERROR:
+    free(my_copy);
+    free(components);
+    if (ret) {
+        free(ret->orig);
+    }
+    free(ret);
+    return NULL;
+#undef JPR_BAIL
 }
 
 void jsonsl_jpr_destroy(jsonsl_jpr_t jpr)
