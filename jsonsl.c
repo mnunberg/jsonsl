@@ -1,3 +1,8 @@
+/* Copyright (C) 2012-2015 Mark Nunberg.
+ *
+ * See included LICENSE file for license details.
+ */
+
 #include "jsonsl.h"
 #include <assert.h>
 #include <limits.h>
