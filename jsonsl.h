@@ -71,6 +71,16 @@ typedef int ssize_t;
 
 #endif /* !JSONSL_API */
 
+#ifndef JSONSL_INLINE
+#if defined(_MSC_VER)
+  #define JSONSL_INLINE __inline
+  #elif defined(__GNUC__)
+  #define JSONSL_INLINE __inline__
+  #else
+  #define JSONSL_INLINE inline
+  #endif /* _MSC_VER or __GNUC__ */
+#endif /* JSONSL_INLINE */
+
 #define JSONSL_MAX_LEVELS 512
 
 struct jsonsl_st;
@@ -539,10 +549,17 @@ void jsonsl_destroy(jsonsl_t jsn);
  * @param jsn the lexer
  * @param cur the current nest, which should be a struct jsonsl_nest_st
  */
-#define jsonsl_last_state(jsn, cur) \
-    (cur->level > 1 ) \
-    ? (jsn->stack + (cur->level-1)) \
-    : NULL
+static JSONSL_INLINE
+struct jsonsl_state_st *jsonsl_last_state(const jsonsl_t jsn,
+                                          const struct jsonsl_state_st *state)
+{
+    /* Don't complain about overriding array bounds */
+    if (state->level > 1) {
+        return jsn->stack + state->level - 1;
+    } else {
+        return NULL;
+    }
+}
 
 /**
  * Gets the state of the last fully consumed child of this parent. This is
@@ -551,24 +568,35 @@ void jsonsl_destroy(jsonsl_t jsn);
  * @param the lexer
  * @return A pointer to the child.
  */
-#define jsonsl_last_child(jsn, parent) \
-    (jsn->stack + (parent->level+1))
+static JSONSL_INLINE
+struct jsonsl_state_st *jsonsl_last_child(const jsonsl_t jsn,
+                                          const struct jsonsl_state_st *parent)
+{
+    return jsn->stack + (parent->level + 1);
+}
 
 /**Call to instruct the parser to stop parsing and return. This is valid
  * only from within a callback */
-#define jsonsl_stop(jsn) (jsn)->stopfl = 1
+static JSONSL_INLINE
+void jsonsl_stop(jsonsl_t jsn)
+{
+    jsn->stopfl = 1;
+}
 
 /**
  * This enables receiving callbacks on all events. Doesn't do
  * anything special but helps avoid some boilerplate.
  * This does not touch the UESCAPE callbacks or flags.
  */
-#define jsonsl_enable_all_callbacks(jsn) \
-    jsn->call_HKEY = 1; \
-    jsn->call_STRING = 1; \
-    jsn->call_OBJECT = 1; \
-    jsn->call_SPECIAL = 1; \
+static JSONSL_INLINE
+void jsonsl_enable_all_callbacks(jsonsl_t jsn)
+{
+    jsn->call_HKEY = 1;
+    jsn->call_STRING = 1;
+    jsn->call_OBJECT = 1;
+    jsn->call_SPECIAL = 1;
     jsn->call_LIST = 1;
+}
 
 /**
  * A macro which returns true if the current state object can
