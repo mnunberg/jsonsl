@@ -97,33 +97,40 @@ case '0':
  * non-string values.
  */
 static jsonsl_special_t *Special_table;
-#define extract_special(c) \
-    Special_table[(unsigned int)(c & 0xff)]
+static jsonsl_special_t extract_special(unsigned c)
+{
+    return Special_table[c & 0xff];
+}
 
 /**
  * This table (predeclared) contains the tokens and other characters
  * which signal the termination of the non-string values.
  */
 static int *Special_Endings;
-#define is_special_end(c) \
-    Special_Endings[(unsigned int)c & 0xff]
+static int is_special_end(unsigned c)
+{
+    return Special_Endings[c & 0xff];
+}
 
 /**
  * This table contains entries for the allowed whitespace
  * as per RFC 4627
  */
 static int *Allowed_Whitespace;
-#define is_allowed_whitespace(c) \
-    (c == ' ' || Allowed_Whitespace[(unsigned int)c & 0xff])
-
+static int is_allowed_whitespace(unsigned c)
+{
+    return c == ' ' || Allowed_Whitespace[c & 0xff];
+}
 
 /**
  * This table contains allowed two-character escapes
  * as per the RFC
  */
 static int *Allowed_Escapes;
-#define is_allowed_escape(c) \
-    Allowed_Escapes[(unsigned int)c & 0xff]
+static int is_allowed_escape(unsigned c)
+{
+    return Allowed_Escapes[c & 0xff];
+}
 
 JSONSL_API
 jsonsl_t jsonsl_new(int nlevels)
