@@ -541,6 +541,16 @@ void jsonsl_destroy(jsonsl_t jsn);
     ? (jsn->stack + (cur->level-1)) \
     : NULL
 
+/**
+ * Gets the state of the last fully consumed child of this parent. This is
+ * only valid in the parent's POP callback.
+ *
+ * @param the lexer
+ * @return A pointer to the child.
+ */
+#define jsonsl_last_child(jsn, parent) \
+    (jsn->stack + (parent->level+1))
+
 /**Call to instruct the parser to stop parsing and return. This is valid
  * only from within a callback */
 #define jsonsl_stop(jsn) (jsn)->stopfl = 1
