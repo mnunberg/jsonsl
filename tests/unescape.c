@@ -47,7 +47,7 @@ void test_null_escape(void)
 void test_multibyte_escape(void)
 {
     int mbres;
-    jsonsl_special_t flags;
+    unsigned flags;
     wchar_t dest[4]; /* שלום */
     escaped = "\\uD7A9\\uD79C\\uD795\\uD79D";
     strtable['u'] = 1;

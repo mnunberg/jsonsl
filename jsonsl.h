@@ -247,10 +247,10 @@ struct jsonsl_state_st {
     /**
      * The JSON object type
      */
-    jsonsl_type_t type;
+    unsigned type;
 
     /** If this element is special, then its extended type is here */
-    jsonsl_special_t special_flags;
+    unsigned special_flags;
 
     /**
      * The position (in terms of number of bytes since the first call to
@@ -760,7 +760,7 @@ void jsonsl_jpr_destroy(jsonsl_jpr_t jpr);
  */
 JSONSL_API
 jsonsl_jpr_match_t jsonsl_jpr_match(jsonsl_jpr_t jpr,
-                                    jsonsl_type_t parent_type,
+                                    unsigned int parent_type,
                                     unsigned int parent_level,
                                     const char *key, size_t nkey);
 
@@ -863,7 +863,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
                                char *out,
                                size_t len,
                                const int toEscape[128],
-                               jsonsl_special_t *oflags,
+                               unsigned *oflags,
                                jsonsl_error_t *err,
                                const char **errat);
 

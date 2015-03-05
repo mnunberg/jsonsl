@@ -90,52 +90,16 @@ case '8': \
 case '9': \
 case '0':
 
-
-
-/**
- * This table (predeclared) contains characters which are recognized
- * non-string values.
- */
-static jsonsl_special_t *Special_table;
-static jsonsl_special_t extract_special(unsigned c)
-{
-    return Special_table[c & 0xff];
-}
-
-/**
- * This table (predeclared) contains the tokens and other characters
- * which signal the termination of the non-string values.
- */
-static int *Special_Endings;
-static int is_special_end(unsigned c)
-{
-    return Special_Endings[c & 0xff];
-}
-
-/**
- * This table contains entries for the allowed whitespace
- * as per RFC 4627
- */
-static int *Allowed_Whitespace;
-static int is_allowed_whitespace(unsigned c)
-{
-    return c == ' ' || Allowed_Whitespace[c & 0xff];
-}
-
-/**
- * This table contains allowed two-character escapes
- * as per the RFC
- */
-static int *Allowed_Escapes;
-static int is_allowed_escape(unsigned c)
-{
-    return Allowed_Escapes[c & 0xff];
-}
+static unsigned extract_special(unsigned);
+static int is_special_end(unsigned);
+static int is_allowed_whitespace(unsigned);
+static int is_allowed_escape(unsigned);
+static char get_escape_equiv(unsigned);
 
 JSONSL_API
 jsonsl_t jsonsl_new(int nlevels)
 {
-    struct jsonsl_st *jsn =
+    struct jsonsl_st *jsn = (struct jsonsl_st *)
             calloc(1, sizeof (*jsn) +
                     ( (nlevels-1) * sizeof (struct jsonsl_state_st) )
             );
@@ -252,7 +216,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
     jsn->base = bytes;
 
     for (; nbytes; nbytes--, jsn->pos++, c++) {
-        register jsonsl_type_t state_type;
+        register unsigned state_type;
         INCR_METRIC(TOTAL);
         /* Special escape handling for some stuff */
         if (jsn->in_escape) {
@@ -731,12 +695,13 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
         count++;
     }
 
-    components = malloc(sizeof(*components) * count);
+    components = (struct jsonsl_jpr_component_st *)
+            malloc(sizeof(*components) * count);
     if (!components) {
         JPR_BAIL(JSONSL_ERROR_ENOMEM);
     }
 
-    my_copy = malloc(strlen(path) + 1);
+    my_copy = (char *)malloc(strlen(path) + 1);
     if (!my_copy) {
         JPR_BAIL(JSONSL_ERROR_ENOMEM);
     }
@@ -767,11 +732,11 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
 
     path--; /*revert path to leading '/' */
     origlen = strlen(path) + 1;
-    ret = malloc(sizeof(*ret));
+    ret = (struct jsonsl_jpr_st *)malloc(sizeof(*ret));
     if (!ret) {
         JPR_BAIL(JSONSL_ERROR_ENOMEM);
     }
-    ret->orig = malloc(origlen);
+    ret->orig = (char *)malloc(origlen);
     if (!ret->orig) {
         JPR_BAIL(JSONSL_ERROR_ENOMEM);
     }
@@ -805,7 +770,7 @@ void jsonsl_jpr_destroy(jsonsl_jpr_t jpr)
 JSONSL_API
 jsonsl_jpr_match_t
 jsonsl_jpr_match(jsonsl_jpr_t jpr,
-                   jsonsl_type_t parent_type,
+                   unsigned int parent_type,
                    unsigned int parent_level,
                    const char *key,
                    size_t nkey)
@@ -887,9 +852,9 @@ void jsonsl_jpr_match_state_init(jsonsl_t jsn,
     if (njprs == 0) {
         return;
     }
-    jsn->jprs = malloc(sizeof(jsonsl_jpr_t) * njprs);
+    jsn->jprs = (jsonsl_jpr_t *)malloc(sizeof(jsonsl_jpr_t) * njprs);
     jsn->jpr_count = njprs;
-    jsn->jpr_root = calloc(1, sizeof(size_t) * njprs * jsn->levels_max);
+    jsn->jpr_root = (size_t*)calloc(1, sizeof(size_t) * njprs * jsn->levels_max);
     memcpy(jsn->jprs, jprs, sizeof(jsonsl_jpr_t) * njprs);
     /* Set the initial jump table values */
 
@@ -1005,11 +970,6 @@ const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match)
 #endif /* JSONSL_WITH_JPR */
 
 /**
- * Maps literal escape sequences with special meaning to their
- * actual control codes (e.g.\n => 0x20)
- */
-static unsigned char *Escape_Maps;
-/**
  * Utility function to convert escape sequences
  */
 JSONSL_API
@@ -1017,7 +977,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
                                char *out,
                                size_t len,
                                const int toEscape[128],
-                               jsonsl_special_t *oflags,
+                               unsigned *oflags,
                                jsonsl_error_t *err,
                                const char **errat)
 {
@@ -1069,9 +1029,10 @@ size_t jsonsl_util_unescape_ex(const char *in,
              * TODO: should the maps actually reflect the desired
              * replacement character in toEscape?
              */
-            if (Escape_Maps[c[1]]) {
+            char esctmp = get_escape_equiv(c[1]);
+            if (esctmp) {
                 /* Check if there is a corresponding replacement */
-                *out = Escape_Maps[c[1]];
+                *out = esctmp;
             } else {
                 /* Just gobble up the 'reverse-solidus' */
                 *out = c[1];
@@ -1139,7 +1100,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
  * This table contains the beginnings of non-string
  * allowable (bareword) values.
  */
-static jsonsl_special_t _special_table[0x100] = {
+static unsigned short Special_Table[0x100] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
         /* 0x20 */ 0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x2c */
         /* 0x2d */ JSONSL_SPECIALf_SIGNED /* - */, /* 0x2d */
@@ -1167,13 +1128,12 @@ static jsonsl_special_t _special_table[0x100] = {
         /* 0xd5 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xf4 */
         /* 0xf5 */ 0,0,0,0,0,0,0,0,0,0 /* 0xfe */
 };
-static jsonsl_special_t *Special_table = _special_table;
 
 /**
  * Contains characters which signal the termination of any of the 'special' bareword
  * values.
  */
-static int _special_endings[0x100] = {
+static int Special_Endings[0x100] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0, /* 0x08 */
         /* 0x09 */ 1 /* <TAB> */, /* 0x09 */
         /* 0x0a */ 1 /* <LF> */, /* 0x0a */
@@ -1201,12 +1161,11 @@ static int _special_endings[0x100] = {
         /* 0xde */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xfd */
         /* 0xfe */ 0 /* 0xfe */
 };
-static int *Special_Endings = _special_endings;
 
 /**
- * Contains allowable whitespace.
+ * This table contains entries for the allowed whitespace as per RFC 4627
  */
-static int _allowed_whitespace[0x100] = {
+static int Allowed_Whitespace[0x100] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0, /* 0x08 */
         /* 0x09 */ 1 /* <TAB> */, /* 0x09 */
         /* 0x0a */ 1 /* <LF> */, /* 0x0a */
@@ -1222,12 +1181,11 @@ static int _allowed_whitespace[0x100] = {
         /* 0xc1 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xe0 */
         /* 0xe1 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 /* 0xfe */
 };
-static int *Allowed_Whitespace = _allowed_whitespace;
 
 /**
  * Allowable two-character 'common' escapes:
  */
-static int _allowed_escapes[0x100] = {
+static int Allowed_Escapes[0x100] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
         /* 0x20 */ 0,0, /* 0x21 */
         /* 0x22 */ 1 /* <"> */, /* 0x22 */
@@ -1254,10 +1212,10 @@ static int _allowed_escapes[0x100] = {
         /* 0xf6 */ 0,0,0,0,0,0,0,0,0, /* 0xfe */
 };
 
-static int *Allowed_Escapes = _allowed_escapes;
-
-
-static unsigned char _escape_maps[0x100] = {
+/**
+ * This table contains the _values_ for a given (single) escaped character.
+ */
+static unsigned char Escape_Equivs[0x100] = {
         /* 0x00 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x1f */
         /* 0x20 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x3f */
         /* 0x40 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5f */
@@ -1278,6 +1236,19 @@ static unsigned char _escape_maps[0x100] = {
         /* 0xf5 */ 0,0,0,0,0,0,0,0,0,0 /* 0xfe */
 };
 
-static unsigned char *Escape_Maps = _escape_maps;
-
-
+/* Definitions of above-declared static functions */
+static char get_escape_equiv(unsigned c) {
+    return Escape_Equivs[c & 0xff];
+}
+static unsigned extract_special(unsigned c) {
+    return Special_Table[c & 0xff];
+}
+static int is_special_end(unsigned c) {
+    return Special_Endings[c & 0xff];
+}
+static int is_allowed_whitespace(unsigned c) {
+    return c == ' ' || Allowed_Whitespace[c & 0xff];
+}
+static int is_allowed_escape(unsigned c) {
+    return Allowed_Escapes[c & 0xff];
+}
