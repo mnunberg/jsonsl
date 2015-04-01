@@ -823,6 +823,8 @@ jsonsl_jpr_match(jsonsl_jpr_t jpr,
              * a list for a parent */
             return JSONSL_MATCH_TYPE_MISMATCH;
         }
+    } else if (parent_type == JSONSL_T_LIST) {
+        return JSONSL_MATCH_TYPE_MISMATCH;
     }
 
     /* Check lengths */
