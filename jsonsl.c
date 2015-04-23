@@ -216,7 +216,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
     jsn->base = bytes;
 
     for (; nbytes; nbytes--, jsn->pos++, c++) {
-        register unsigned state_type;
+        unsigned state_type;
         INCR_METRIC(TOTAL);
         /* Special escape handling for some stuff */
         if (jsn->in_escape) {
