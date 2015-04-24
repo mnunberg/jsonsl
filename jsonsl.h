@@ -328,6 +328,26 @@ struct jsonsl_state_st {
 #endif /* JSONSL_STATE_USER_FIELDS */
 };
 
+/**Gets the number of elements in the list.
+ * @param st The state. Must be of type JSONSL_T_LIST
+ * @return number of elements in the list
+ */
+#define JSONSL_LIST_SIZE(st) ((st)->nelem)
+
+/**Gets the number of key-value pairs in an object
+ * @param st The state. Must be of type JSONSL_T_OBJECT
+ * @return the number of key-value pairs in the object
+ */
+#define JSONSL_OBJECT_SIZE(st) ((st)->nelem / 2)
+
+/**Gets the numeric value.
+ * @param st The state. Must be of type JSONSL_T_SPECIAL and
+ *           special_flags must have the JSONSL_SPECIALf_NUMERIC flag
+ *           set.
+ * @return the numeric value of the state.
+ */
+#define JSONSL_NUMERIC_VALUE(st) ((st)->nelem)
+
 /*
  * So now we need some special structure for keeping the
  * JPR info in sync. Preferrably all in a single block
