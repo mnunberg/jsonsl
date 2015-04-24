@@ -59,8 +59,8 @@ typedef int ssize_t;
 #endif /* JSONSL_STATE_GENERIC */
 
 /* Additional fields for component object */
-#ifndef JSONSL_JPR_COMPONENT_FIELDS
-#define JSONSL_JPR_COMPONENT_FIELDS
+#ifndef JSONSL_JPR_COMPONENT_USER_FIELDS
+#define JSONSL_JPR_COMPONENT_USER_FIELDS
 #endif
 
 #ifndef JSONSL_API
@@ -732,7 +732,7 @@ struct jsonsl_jpr_component_st {
     short is_arridx;
 
     /* Extra fields (for more advanced searches. Default is empty) */
-    JSONSL_JPR_COMPONENT_FIELDS
+    JSONSL_JPR_COMPONENT_USER_FIELDS
 };
 
 struct jsonsl_jpr_st {
