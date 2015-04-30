@@ -215,6 +215,8 @@ typedef enum {
     X(TRAILING_COMMA) \
 /* An invalid number was passed in a numeric field */ \
     X(INVALID_NUMBER) \
+/* Value is missing for object */ \
+    X(VALUE_EXPECTED) \
 /* The following are for JPR Stuff */ \
     \
 /* Found a literal '%' but it was only followed by a single valid hex digit */ \

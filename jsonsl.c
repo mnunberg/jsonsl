@@ -478,6 +478,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             } else {
                 if (state->type != '{') {
                     INVOKE_ERROR(BRACKET_MISMATCH);
+                } else if (state->nelem && state->nelem % 2 != 0) {
+                    INVOKE_ERROR(VALUE_EXPECTED);
                 }
                 DO_CALLBACK(OBJECT, POP);
             }
