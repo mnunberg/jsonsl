@@ -1355,3 +1355,23 @@ static int is_allowed_whitespace(unsigned c) {
 static int is_allowed_escape(unsigned c) {
     return Allowed_Escapes[c & 0xff];
 }
+
+/* Clean up all our macros! */
+#undef INCR_METRIC
+#undef INCR_GENERIC
+#undef INCR_STRINGY_CATCH
+#undef CASE_DIGITS
+#undef INVOKE_ERROR
+#undef STACK_PUSH
+#undef STACK_POP_NOPOS
+#undef STACK_POP
+#undef CALLBACK_AND_POP_NOPOS
+#undef CALLBACK_AND_POP
+#undef SPECIAL_POP
+#undef CUR_CHAR
+#undef DO_CALLBACK
+#undef ENSURE_HVAL
+#undef VERIFY_SPECIAL
+#undef STATE_SPECIAL_LENGTH
+#undef IS_NORMAL_NUMBER
+#undef STATE_NUM_LAST
