@@ -185,6 +185,8 @@ typedef enum {
     X(GARBAGE_TRAILING) \
 /* We were expecting a 'special' (numeric, true, false, null) */ \
     X(SPECIAL_EXPECTED) \
+/* The 'special' value was incomplete */ \
+    X(SPECIAL_INCOMPLETE) \
 /* Found a stray token */ \
     X(STRAY_TOKEN) \
 /* We were expecting a token before this one */ \
@@ -310,6 +312,9 @@ struct jsonsl_state_st {
 
     /**
      * Counter which is incremented each time an escape ('\') is encountered.
+     * This is used internally for non-string types and should only be
+     * inspected by the user if the state actually represents a string
+     * type.
      */
     unsigned int nescapes;
 

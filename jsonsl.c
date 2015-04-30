@@ -209,6 +209,9 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             INVOKE_ERROR(SPECIAL_EXPECTED); \
         }
 
+#define STATE_SPECIAL_LENGTH \
+    (state)->nescapes
+
     const jsonsl_uchar_t *c = (jsonsl_uchar_t*)bytes;
     size_t levels_max = jsn->levels_max;
     struct jsonsl_state_st *state = jsn->stack + jsn->level;
@@ -282,6 +285,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             }
             /* else if (!NUMERIC) */
             if (!is_special_end(CUR_CHAR)) {
+                STATE_SPECIAL_LENGTH++;
+
                 /* Verify TRUE, FALSE, NULL */
                 if (state->special_flags == JSONSL_SPECIALf_TRUE) {
                     VERIFY_SPECIAL("true");
@@ -295,6 +300,20 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             }
 
             GT_SPECIAL_POP:
+            if (state->special_flags == JSONSL_SPECIALf_TRUE) {
+                if (STATE_SPECIAL_LENGTH != 4) {
+                    INVOKE_ERROR(SPECIAL_INCOMPLETE);
+                }
+                state->nelem = 1;
+            } else if (state->special_flags == JSONSL_SPECIALf_FALSE) {
+                if (STATE_SPECIAL_LENGTH != 5) {
+                    INVOKE_ERROR(SPECIAL_INCOMPLETE);
+                }
+            } else if (state->special_flags == JSONSL_SPECIALf_NULL) {
+                if (STATE_SPECIAL_LENGTH != 4) {
+                    INVOKE_ERROR(SPECIAL_INCOMPLETE);
+                }
+            }
             SPECIAL_POP;
             jsn->expecting = ',';
             if (is_allowed_whitespace(CUR_CHAR)) {
@@ -518,6 +537,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 STACK_PUSH;
                 state->type = JSONSL_T_SPECIAL;
                 state->special_flags = special_flags;
+                STATE_SPECIAL_LENGTH = 1;
                 if (special_flags == JSONSL_SPECIALf_UNSIGNED) {
                     state->nelem = CUR_CHAR - 0x30;
                 } else {
