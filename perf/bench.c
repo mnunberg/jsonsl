@@ -28,7 +28,7 @@ int main(int argc, char **argv)
     }
     buf = malloc(sb.st_size);
     fread(buf, 1, sb.st_size, fh);
-    jsn = jsonsl_new(512);
+    jsn = jsonsl_new(128);
     for (ii = 0; ii < itermax; ii++) {
         jsonsl_reset(jsn);
         jsonsl_feed(jsn, buf, sb.st_size);

@@ -61,7 +61,7 @@ run(int validate_utf8)
     double starttime;
 
     starttime = mygettime();
-    jsonsl_t jsn = jsonsl_new(512);
+    jsonsl_t jsn = jsonsl_new(128);
     jsn->error_callback = error_callback;
 
     /* allocate a parser */
