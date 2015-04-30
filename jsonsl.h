@@ -150,10 +150,21 @@ typedef enum {
     JSONSL_XSPECIAL
 #undef X
     /* Handy flags for checking */
+
     JSONSL_SPECIALf_UNKNOWN = 1 << 8,
-    JSONSL_SPECIALf_NUMERIC = (JSONSL_SPECIALf_SIGNED|JSONSL_SPECIALf_UNSIGNED),
+
+    /** @private Private */
+    JSONSL_SPECIALf_ZERO    = 1 << 9 | JSONSL_SPECIALf_UNSIGNED,
+    /** @private */
+    JSONSL_SPECIALf_DASH    = 1 << 10,
+
+    /** Type is numeric */
+    JSONSL_SPECIALf_NUMERIC = (JSONSL_SPECIALf_SIGNED| JSONSL_SPECIALf_UNSIGNED),
+
+    /** Type is a boolean */
     JSONSL_SPECIALf_BOOLEAN = (JSONSL_SPECIALf_TRUE|JSONSL_SPECIALf_FALSE),
-    /* For non-simple numeric types */
+
+    /** Type is an "extended", not integral type (but numeric) */
     JSONSL_SPECIALf_NUMNOINT = (JSONSL_SPECIALf_FLOAT|JSONSL_SPECIALf_EXPONENT)
 } jsonsl_special_t;
 
