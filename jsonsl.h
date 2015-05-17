@@ -468,7 +468,12 @@ struct jsonsl_st {
     /** Default callback for any action, if neither PUSH or POP callbacks are defined */
     jsonsl_stack_callback action_callback;
 
-    /** Do not invoke callbacks for objects deeper than this level */
+    /**
+     * Do not invoke callbacks for objects deeper than this level.
+     * NOTE: This field establishes the lower bound for ignored callbacks,
+     * and is thus misnamed. `min_ignore_level` would actually make more
+     * sense, but we don't want to break API.
+     */
     unsigned int max_callback_level;
 
     /** The error callback. Invoked when an error happens. Should not be NULL */
