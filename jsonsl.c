@@ -218,6 +218,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
 #define STATE_NUM_LAST jsn->tok_last
 
+#define CONTINUE_NEXT_CHAR() continue
+
     const jsonsl_uchar_t *c = (jsonsl_uchar_t*)bytes;
     size_t levels_max = jsn->levels_max;
     struct jsonsl_state_st *state = jsn->stack + jsn->level;
@@ -238,7 +240,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                     return;
                 }
             }
-            goto GT_NEXT;
+            CONTINUE_NEXT_CHAR();
         }
         GT_AGAIN:
         /**
@@ -255,7 +257,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 #endif /* JSONSL_USE_WCHAR */
                     (!chrt_string_nopass[CUR_CHAR & 0xff])) {
                 INCR_METRIC(STRINGY_INSIGNIFICANT);
-                goto GT_NEXT;
+                CONTINUE_NEXT_CHAR();
             } else if (CUR_CHAR == '"') {
                 goto GT_QUOTE;
             } else if (CUR_CHAR == '\\') {
@@ -270,7 +272,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             if (IS_NORMAL_NUMBER) {
                 if (isdigit(CUR_CHAR)) {
                     state->nelem = (state->nelem * 10) + (CUR_CHAR-0x30);
-                    goto GT_NEXT;
+                    CONTINUE_NEXT_CHAR();
                 } else {
                     goto GT_SPECIAL_NUMERIC;
                 }
@@ -288,8 +290,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 } else {
                     INVOKE_ERROR(INVALID_NUMBER);
                 }
-
-                goto GT_NEXT;
+                CONTINUE_NEXT_CHAR();
 
             } else if (state->special_flags == JSONSL_SPECIALf_ZERO) {
                 if (isdigit(CUR_CHAR)) {
@@ -310,7 +311,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 switch (CUR_CHAR) {
                 CASE_DIGITS
                     STATE_NUM_LAST = '1';
-                    goto GT_NEXT;
+                    CONTINUE_NEXT_CHAR();
 
                 case '.':
                     if (state->special_flags & JSONSL_SPECIALf_FLOAT) {
@@ -318,7 +319,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                     }
                     state->special_flags |= JSONSL_SPECIALf_FLOAT;
                     STATE_NUM_LAST = '.';
-                    goto GT_NEXT;
+                    CONTINUE_NEXT_CHAR();
 
                 case 'e':
                 case 'E':
@@ -327,7 +328,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                     }
                     state->special_flags |= JSONSL_SPECIALf_EXPONENT;
                     STATE_NUM_LAST = 'e';
-                    goto GT_NEXT;
+                    CONTINUE_NEXT_CHAR();
 
                 case '-':
                 case '+':
@@ -335,7 +336,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                         INVOKE_ERROR(INVALID_NUMBER);
                     }
                     STATE_NUM_LAST = '-';
-                    goto GT_NEXT;
+                    CONTINUE_NEXT_CHAR();
 
                 default:
                     if (is_special_end(CUR_CHAR)) {
@@ -358,7 +359,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                     VERIFY_SPECIAL("null");
                 }
                 INCR_METRIC(SPECIAL_FASTPATH);
-                goto GT_NEXT;
+                CONTINUE_NEXT_CHAR();
             }
 
             GT_SPECIAL_POP:
@@ -393,7 +394,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             SPECIAL_POP;
             jsn->expecting = ',';
             if (is_allowed_whitespace(CUR_CHAR)) {
-                goto GT_NEXT;
+                CONTINUE_NEXT_CHAR();
             }
             /**
              * This works because we have a non-whitespace token
@@ -408,7 +409,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             /* So we're not special. Harmless insignificant whitespace
              * passthrough
              */
-            goto GT_NEXT;
+            CONTINUE_NEXT_CHAR();
         } else if (extract_special(CUR_CHAR)) {
             /* not a string, whitespace, or structural token. must be special */
             goto GT_SPECIAL_BEGIN;
@@ -424,10 +425,10 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             /* the end of a string or hash key */
             case JSONSL_T_STRING:
                 CALLBACK_AND_POP(STRING);
-                goto GT_NEXT;
+                CONTINUE_NEXT_CHAR();
             case JSONSL_T_HKEY:
                 CALLBACK_AND_POP(HKEY);
-                goto GT_NEXT;
+                CONTINUE_NEXT_CHAR();
 
             case JSONSL_T_OBJECT:
                 state->nelem++;
@@ -455,7 +456,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                     state->type = JSONSL_T_HKEY;
                     DO_CALLBACK(HKEY, PUSH);
                 }
-                goto GT_NEXT;
+                CONTINUE_NEXT_CHAR();
 
             case JSONSL_T_LIST:
                 state->nelem++;
@@ -464,7 +465,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 jsn->expecting = ',';
                 jsn->tok_last = 0;
                 DO_CALLBACK(STRING, PUSH);
-                goto GT_NEXT;
+                CONTINUE_NEXT_CHAR();
 
             case JSONSL_T_SPECIAL:
                 INVOKE_ERROR(STRAY_TOKEN);
@@ -483,7 +484,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             }
             state->nescapes++;
             jsn->in_escape = 1;
-            goto GT_NEXT;
+            CONTINUE_NEXT_CHAR();
         } /* " or \ */
 
         GT_STRUCTURAL_TOKEN:
@@ -496,7 +497,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             jsn->tok_last = ':';
             jsn->can_insert = 1;
             jsn->expecting = '"';
-            goto GT_NEXT;
+            CONTINUE_NEXT_CHAR();
 
         case ',':
             INCR_METRIC(STRUCTURAL_TOKEN);
@@ -522,7 +523,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
 
             jsn->tok_last = ',';
             jsn->expecting = '"';
-            goto GT_NEXT;
+            CONTINUE_NEXT_CHAR();
 
             /* new list or object */
             /* hashes are more common */
@@ -551,7 +552,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 DO_CALLBACK(LIST, PUSH);
             }
             jsn->tok_last = 0;
-            goto GT_NEXT;
+            CONTINUE_NEXT_CHAR();
 
             /* closing of list or object */
         case '}':
@@ -580,7 +581,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             }
             state = jsn->stack + jsn->level;
             state->pos_cur = jsn->pos;
-            goto GT_NEXT;
+            CONTINUE_NEXT_CHAR();
 
         default:
             GT_SPECIAL_BEGIN:
@@ -624,11 +625,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 }
                 DO_CALLBACK(SPECIAL, PUSH);
             }
-            goto GT_NEXT;
+            CONTINUE_NEXT_CHAR();
         }
-
-        GT_NEXT:
-        continue;
     }
 }
 
