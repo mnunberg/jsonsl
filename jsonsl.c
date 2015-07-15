@@ -21,6 +21,7 @@
     X(STRUCTURAL_TOKEN) \
     X(SPECIAL_SWITCHFIRST) \
     X(STRINGY_CATCH) \
+    X(NUMBER_FASTPATH) \
     X(ESCAPES) \
     X(TOTAL) \
 
@@ -137,6 +138,84 @@ void jsonsl_destroy(jsonsl_t jsn)
     }
 }
 
+
+#define FASTPARSE_EXHAUSTED 1
+#define FASTPARSE_BREAK 0
+static int chrt_string_nopass[0x100] = { JSONSL_CHARTABLE_string_nopass };
+
+/*
+ * This function is meant to accelerate string parsing, reducing the main loop's
+ * check if we are indeed a string.
+ *
+ * @param jsn the parser
+ * @param[in,out] bytes_p A pointer to the current buffer (i.e. current position)
+ * @param[in,out] nbytes_p A pointer to the current size of the buffer
+ * @return true if all bytes have been exhausted (and thus the main loop can
+ * return), false if a special character was examined which requires greater
+ * examination.
+ */
+static int
+jsonsl__str_fastparse(jsonsl_t jsn,
+                      const jsonsl_uchar_t **bytes_p, size_t *nbytes_p)
+{
+    int exhausted = 1;
+    size_t nbytes = *nbytes_p;
+    const jsonsl_uchar_t *bytes = *bytes_p;
+
+    for (; nbytes; nbytes--, bytes++) {
+        if (
+#ifdef JSONSL_USE_WCHAR
+                CUR_CHAR >= 0x100 ||
+#endif /* JSONSL_USE_WCHAR */
+                (!chrt_string_nopass[(*bytes) & 0xff])) {
+            INCR_METRIC(TOTAL);
+            INCR_METRIC(STRINGY_INSIGNIFICANT);
+        } else {
+            exhausted = 0;
+            break;
+        }
+    }
+
+    /* Once we're done here, re-calculate the position variables */
+    jsn->pos += (*nbytes_p - nbytes);
+    if (exhausted) {
+        return FASTPARSE_EXHAUSTED;
+    }
+
+    *nbytes_p = nbytes;
+    *bytes_p = bytes;
+    return FASTPARSE_BREAK;
+}
+
+static int
+jsonsl__num_fastparse(jsonsl_t jsn,
+                      const jsonsl_uchar_t **bytes_p, size_t *nbytes_p,
+                      struct jsonsl_state_st *state)
+{
+    int exhausted = 1;
+    size_t nbytes = *nbytes_p;
+    const jsonsl_uchar_t *bytes = *bytes_p;
+
+    for (; nbytes; nbytes--, bytes++) {
+        jsonsl_uchar_t c = *bytes;
+        if (isdigit(c)) {
+            INCR_METRIC(TOTAL);
+            INCR_METRIC(NUMBER_FASTPATH);
+            state->nelem = (state->nelem * 10) + (c - 0x30);
+        } else {
+            exhausted = 0;
+            break;
+        }
+    }
+    jsn->pos += (*nbytes_p - nbytes);
+    if (exhausted) {
+        return FASTPARSE_EXHAUSTED;
+    }
+    *nbytes_p = nbytes;
+    *bytes_p = bytes;
+    return FASTPARSE_BREAK;
+}
+
 JSONSL_API
 void
 jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
@@ -223,60 +302,52 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
     const jsonsl_uchar_t *c = (jsonsl_uchar_t*)bytes;
     size_t levels_max = jsn->levels_max;
     struct jsonsl_state_st *state = jsn->stack + jsn->level;
-    static int chrt_string_nopass[0x100] = { JSONSL_CHARTABLE_string_nopass };
     jsn->base = bytes;
 
     for (; nbytes; nbytes--, jsn->pos++, c++) {
         unsigned state_type;
         INCR_METRIC(TOTAL);
-        /* Special escape handling for some stuff */
-        if (jsn->in_escape) {
-            jsn->in_escape = 0;
-            if (!is_allowed_escape(CUR_CHAR)) {
-                INVOKE_ERROR(ESCAPE_INVALID);
-            } else if (CUR_CHAR == 'u') {
-                DO_CALLBACK(UESCAPE, UESCAPE);
-                if (jsn->return_UESCAPE) {
-                    return;
-                }
-            }
-            CONTINUE_NEXT_CHAR();
-        }
+
         GT_AGAIN:
-        /**
-         * Several fast-tracks for common cases:
-         */
         state_type = state->type;
+        /* Most common type is typically a string: */
         if (state_type & JSONSL_Tf_STRINGY) {
-            /* check if our character cannot ever change our current string state
-             * or throw an error
-             */
-            if (
-#ifdef JSONSL_USE_WCHAR
-                    CUR_CHAR >= 0x100 ||
-#endif /* JSONSL_USE_WCHAR */
-                    (!chrt_string_nopass[CUR_CHAR & 0xff])) {
-                INCR_METRIC(STRINGY_INSIGNIFICANT);
+            /* Special escape handling for some stuff */
+            if (jsn->in_escape) {
+                jsn->in_escape = 0;
+                if (!is_allowed_escape(CUR_CHAR)) {
+                    INVOKE_ERROR(ESCAPE_INVALID);
+                } else if (CUR_CHAR == 'u') {
+                    DO_CALLBACK(UESCAPE, UESCAPE);
+                    if (jsn->return_UESCAPE) {
+                        return;
+                    }
+                }
                 CONTINUE_NEXT_CHAR();
-            } else if (CUR_CHAR == '"') {
-                goto GT_QUOTE;
-            } else if (CUR_CHAR == '\\') {
-                goto GT_ESCAPE;
+            }
+
+            if (jsonsl__str_fastparse(jsn, &c, &nbytes)) {
+                /* No need to readjust variables as we've exhausted the iterator */
+                return;
             } else {
-                INVOKE_ERROR(WEIRD_WHITESPACE);
+                if (CUR_CHAR == '"') {
+                    goto GT_QUOTE;
+                } else if (CUR_CHAR == '\\') {
+                    goto GT_ESCAPE;
+                } else {
+                    INVOKE_ERROR(WEIRD_WHITESPACE);
+                }
             }
             INCR_METRIC(STRINGY_SLOWPATH);
 
         } else if (state_type == JSONSL_T_SPECIAL) {
             /* Fast track for signed/unsigned */
             if (IS_NORMAL_NUMBER) {
-                if (isdigit(CUR_CHAR)) {
-                    state->nelem = (state->nelem * 10) + (CUR_CHAR-0x30);
-                    CONTINUE_NEXT_CHAR();
+                if (jsonsl__num_fastparse(jsn, &c, &nbytes, state)) {
+                    return;
                 } else {
                     goto GT_SPECIAL_NUMERIC;
                 }
-
             } else if (state->special_flags == JSONSL_SPECIALf_DASH) {
                 if (!isdigit(CUR_CHAR)) {
                     INVOKE_ERROR(INVALID_NUMBER);
@@ -1373,3 +1444,5 @@ static int is_allowed_escape(unsigned c) {
 #undef STATE_SPECIAL_LENGTH
 #undef IS_NORMAL_NUMBER
 #undef STATE_NUM_LAST
+#undef FASTPARSE_EXHAUSTED
+#undef FASTPARSE_BREAK
