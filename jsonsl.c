@@ -141,7 +141,7 @@ void jsonsl_destroy(jsonsl_t jsn)
 
 #define FASTPARSE_EXHAUSTED 1
 #define FASTPARSE_BREAK 0
-static int chrt_string_nopass[0x100] = { JSONSL_CHARTABLE_string_nopass };
+static const int chrt_string_nopass[0x100] = { JSONSL_CHARTABLE_string_nopass };
 
 /*
  * This function is meant to accelerate string parsing, reducing the main loop's
@@ -165,9 +165,9 @@ jsonsl__str_fastparse(jsonsl_t jsn,
     for (; nbytes; nbytes--, bytes++) {
         if (
 #ifdef JSONSL_USE_WCHAR
-                CUR_CHAR >= 0x100 ||
+                *bytes >= 0x100 ||
 #endif /* JSONSL_USE_WCHAR */
-                (!chrt_string_nopass[(*bytes) & 0xff])) {
+                (!chrt_string_nopass[*bytes])) {
             INCR_METRIC(TOTAL);
             INCR_METRIC(STRINGY_INSIGNIFICANT);
         } else {
@@ -187,6 +187,8 @@ jsonsl__str_fastparse(jsonsl_t jsn,
     return FASTPARSE_BREAK;
 }
 
+/* Functions exactly like str_fastparse, except it also accepts a 'state'
+ * argument, since the number's value is updated in the state. */
 static int
 jsonsl__num_fastparse(jsonsl_t jsn,
                       const jsonsl_uchar_t **bytes_p, size_t *nbytes_p,
@@ -326,7 +328,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 CONTINUE_NEXT_CHAR();
             }
 
-            if (jsonsl__str_fastparse(jsn, &c, &nbytes)) {
+            if (jsonsl__str_fastparse(jsn, &c, &nbytes) ==
+                    FASTPARSE_EXHAUSTED) {
                 /* No need to readjust variables as we've exhausted the iterator */
                 return;
             } else {
@@ -343,7 +346,8 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         } else if (state_type == JSONSL_T_SPECIAL) {
             /* Fast track for signed/unsigned */
             if (IS_NORMAL_NUMBER) {
-                if (jsonsl__num_fastparse(jsn, &c, &nbytes, state)) {
+                if (jsonsl__num_fastparse(jsn, &c, &nbytes, state) ==
+                        FASTPARSE_EXHAUSTED) {
                     return;
                 } else {
                     goto GT_SPECIAL_NUMERIC;
