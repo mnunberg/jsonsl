@@ -64,6 +64,7 @@ my @allowed_escapes;
 my @string_passthrough;
 $string_passthrough[ord($_)] = 1 for ('\\','"');
 $string_passthrough[$_] = 1 for (0..19);
+$string_passthrough[$_] = 1 for (128..255);
 
 ################################################################################
 ################################################################################
@@ -279,8 +280,12 @@ for (; $i < 255; $i++) {
     my $v = $Table->[$i];
     if (defined $v) {
         my $char_pretty = $PrettyMap{chr($i)};
-        $v = sprintf("$v /* %s */", $char_pretty);
-        add_special($v);
+        if (defined $char_pretty) {
+            $v = sprintf("$v /* %s */", $char_pretty);
+            add_special($v);
+        } else {
+            add_to_grid(1);
+        }
     } else {
         add_to_grid(0);
     }

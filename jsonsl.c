@@ -138,10 +138,65 @@ void jsonsl_destroy(jsonsl_t jsn)
     }
 }
 
+static int
+jsonsl__get_utf8_exp(jsonsl_uchar_t c)
+{
+    /* Returns the number of extra bytes (excluding current) required */
+    if ((c & 0xE0) == 0xC0) {
+        /* Mask with 1110 0000 to see if third MSB is 0 */
+        return 1;
+    } else if ((c & 0xF0) == 0xE0) {
+        /* Mask with 1111 0000 to see if fourth MSB is 0 */
+        return 2;
+    } else if ((c & 0xF8) == 0xF0) {
+        /* Mask with 1111 1000 to see if fifth MSB is 0 */
+        return 3;
+    } else {
+        printf("Couldn't derive start sequence from 0x%x\n", c);
+        return -1;
+    }
+}
 
 #define FASTPARSE_EXHAUSTED 1
 #define FASTPARSE_BREAK 0
-static const int chrt_string_nopass[0x100] = { JSONSL_CHARTABLE_string_nopass };
+#define FASTPARSE_ERROR -1
+static const int chrt_string_nopass[0x100] = {
+        /* 0x00 */ 1 /* <NUL> */, /* 0x00 */
+        /* 0x01 */ 1 /* <SOH> */, /* 0x01 */
+        /* 0x02 */ 1 /* <STX> */, /* 0x02 */
+        /* 0x03 */ 1 /* <ETX> */, /* 0x03 */
+        /* 0x04 */ 1 /* <EOT> */, /* 0x04 */
+        /* 0x05 */ 1 /* <ENQ> */, /* 0x05 */
+        /* 0x06 */ 1 /* <ACK> */, /* 0x06 */
+        /* 0x07 */ 1 /* <BEL> */, /* 0x07 */
+        /* 0x08 */ 1 /* <BS> */, /* 0x08 */
+        /* 0x09 */ 1 /* <HT> */, /* 0x09 */
+        /* 0x0a */ 1 /* <LF> */, /* 0x0a */
+        /* 0x0b */ 1 /* <VT> */, /* 0x0b */
+        /* 0x0c */ 1 /* <FF> */, /* 0x0c */
+        /* 0x0d */ 1 /* <CR> */, /* 0x0d */
+        /* 0x0e */ 1 /* <SO> */, /* 0x0e */
+        /* 0x0f */ 1 /* <SI> */, /* 0x0f */
+        /* 0x10 */ 1 /* <DLE> */, /* 0x10 */
+        /* 0x11 */ 1 /* <DC1> */, /* 0x11 */
+        /* 0x12 */ 1 /* <DC2> */, /* 0x12 */
+        /* 0x13 */ 1 /* <DC3> */, /* 0x13 */
+        /* 0x14 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x21 */
+        /* 0x22 */ 1 /* <"> */, /* 0x22 */
+        /* 0x23 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x42 */
+        /* 0x43 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5b */
+        /* 0x5c */ 1 /* <\> */, /* 0x5c */
+        /* 0x5d */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x7c */
+        /* 0x7d */ 0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0x9c */
+        /* 0x9d */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0xbc */
+        /* 0xbd */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0xdc */
+        /* 0xdd */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0xfc */
+        /* 0xfd */ 1,1, /* 0xfe */
+};
+
+static int
+jsonsl__utf8_validate(jsonsl_t jsn,
+                      const jsonsl_uchar_t **bytes_p, size_t *nbytes_p);
 
 /*
  * This function is meant to accelerate string parsing, reducing the main loop's
@@ -159,8 +214,20 @@ jsonsl__str_fastparse(jsonsl_t jsn,
                       const jsonsl_uchar_t **bytes_p, size_t *nbytes_p)
 {
     int exhausted = 1;
-    size_t nbytes = *nbytes_p;
-    const jsonsl_uchar_t *bytes = *bytes_p;
+    size_t nbytes;
+    const jsonsl_uchar_t *bytes;
+
+    if (jsn->utf8_exp) {
+        int fprv = jsonsl__utf8_validate(jsn, bytes_p, nbytes_p);
+        if (fprv == FASTPARSE_ERROR) {
+            return FASTPARSE_ERROR;
+        } else if (fprv == FASTPARSE_EXHAUSTED) {
+            return FASTPARSE_EXHAUSTED;
+        }
+    }
+
+    nbytes = *nbytes_p;
+    bytes = *bytes_p;
 
     for (; nbytes; nbytes--, bytes++) {
         if (
@@ -182,6 +249,30 @@ jsonsl__str_fastparse(jsonsl_t jsn,
         return FASTPARSE_EXHAUSTED;
     }
 
+    *nbytes_p = nbytes;
+    *bytes_p = bytes;
+    return FASTPARSE_BREAK;
+}
+
+static int
+jsonsl__utf8_validate(jsonsl_t jsn,
+                      const jsonsl_uchar_t **bytes_p, size_t *nbytes_p)
+{
+    int exhausted = 1;
+    size_t nbytes = *nbytes_p;
+    const jsonsl_uchar_t *bytes = *bytes_p;
+
+    for (; nbytes && jsn->utf8_exp; nbytes--, bytes++, jsn->utf8_exp--) {
+        if (*bytes < 0x7F) {
+            return FASTPARSE_ERROR;
+        } else if ((*bytes & 0xC0) != 0x80) {
+            return FASTPARSE_ERROR;
+        }
+    }
+    jsn->pos += (*nbytes_p - nbytes);
+    if (!nbytes) {
+        return FASTPARSE_EXHAUSTED;
+    }
     *nbytes_p = nbytes;
     *bytes_p = bytes;
     return FASTPARSE_BREAK;
@@ -314,6 +405,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         state_type = state->type;
         /* Most common type is typically a string: */
         if (state_type & JSONSL_Tf_STRINGY) {
+            int fprv;
             /* Special escape handling for some stuff */
             if (jsn->in_escape) {
                 jsn->in_escape = 0;
@@ -328,15 +420,21 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
                 CONTINUE_NEXT_CHAR();
             }
 
-            if (jsonsl__str_fastparse(jsn, &c, &nbytes) ==
-                    FASTPARSE_EXHAUSTED) {
-                /* No need to readjust variables as we've exhausted the iterator */
+            fprv = jsonsl__str_fastparse(jsn, &c, &nbytes);
+            if (fprv == FASTPARSE_EXHAUSTED) {
                 return;
+            } else if (fprv == FASTPARSE_ERROR) {
+                INVOKE_ERROR(GENERIC);
             } else {
                 if (CUR_CHAR == '"') {
                     goto GT_QUOTE;
                 } else if (CUR_CHAR == '\\') {
                     goto GT_ESCAPE;
+                } else if (CUR_CHAR > 0x7F) {
+                    if ((jsn->utf8_exp = jsonsl__get_utf8_exp(CUR_CHAR)) == -1) {
+                        INVOKE_ERROR(INVALID_UTF8);
+                    }
+                    CONTINUE_NEXT_CHAR();
                 } else {
                     INVOKE_ERROR(WEIRD_WHITESPACE);
                 }

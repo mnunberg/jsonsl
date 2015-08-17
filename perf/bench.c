@@ -12,6 +12,7 @@ int main(int argc, char **argv)
     jsonsl_t jsn;
     int rv, itermax, ii;
     int is_rawscan = 0;
+    int is_streaming = 0;
     time_t begin_time;
     size_t total_size;
     unsigned long duration;
@@ -23,8 +24,15 @@ int main(int argc, char **argv)
     }
 
     if (argc > 3) {
-        if (strcmp("raw", argv[3]) == 0) {
+        if (strcmp("scan", argv[3]) == 0) {
+            /* Normal */
+        } else if (strcmp("raw", argv[3]) == 0) {
             is_rawscan = 1;
+        } else if (strcmp("stream", argv[3]) == 0) {
+            is_streaming = 1;
+        } else {
+            fprintf(stderr, "Bad mode %s\n", argv[3]);
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -54,6 +62,14 @@ int main(int argc, char **argv)
                 if (buf[jj] == '"') {
                     stuff++;
                 }
+            }
+        }
+    } else if (is_streaming) {
+        for (ii = 0; ii < itermax; ii++) {
+            size_t jj;
+            jsonsl_reset(jsn);
+            for (jj = 0; jj < sb.st_size; jj++) {
+                jsonsl_feed(jsn, buf + jj, 1);
             }
         }
     } else {
