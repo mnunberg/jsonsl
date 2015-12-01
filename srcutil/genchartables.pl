@@ -279,8 +279,12 @@ for (; $i < 255; $i++) {
     my $v = $Table->[$i];
     if (defined $v) {
         my $char_pretty = $PrettyMap{chr($i)};
-        $v = sprintf("$v /* %s */", $char_pretty);
-        add_special($v);
+        if (defined $char_pretty) {
+            $v = sprintf("$v /* %s */", $char_pretty);
+            add_special($v);
+        } else {
+            add_to_grid(1);
+        }
     } else {
         add_to_grid(0);
     }
