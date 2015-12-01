@@ -95,6 +95,7 @@ static unsigned extract_special(unsigned);
 static int is_special_end(unsigned);
 static int is_allowed_whitespace(unsigned);
 static int is_allowed_escape(unsigned);
+static int is_simple_char(unsigned);
 static char get_escape_equiv(unsigned);
 
 JSONSL_API
@@ -141,7 +142,6 @@ void jsonsl_destroy(jsonsl_t jsn)
 
 #define FASTPARSE_EXHAUSTED 1
 #define FASTPARSE_BREAK 0
-static const int chrt_string_nopass[0x100] = { JSONSL_CHARTABLE_string_nopass };
 
 /*
  * This function is meant to accelerate string parsing, reducing the main loop's
@@ -167,7 +167,7 @@ jsonsl__str_fastparse(jsonsl_t jsn,
 #ifdef JSONSL_USE_WCHAR
                 *bytes >= 0x100 ||
 #endif /* JSONSL_USE_WCHAR */
-                (!chrt_string_nopass[*bytes])) {
+                (is_simple_char(*bytes))) {
             INCR_METRIC(TOTAL);
             INCR_METRIC(STRINGY_INSIGNIFICANT);
         } else {
@@ -1358,6 +1358,40 @@ static int Allowed_Whitespace[0x100] = {
         /* 0xe1 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 /* 0xfe */
 };
 
+static const int String_No_Passthrough[0x100] = {
+        /* 0x00 */ 1 /* <NUL> */, /* 0x00 */
+        /* 0x01 */ 1 /* <SOH> */, /* 0x01 */
+        /* 0x02 */ 1 /* <STX> */, /* 0x02 */
+        /* 0x03 */ 1 /* <ETX> */, /* 0x03 */
+        /* 0x04 */ 1 /* <EOT> */, /* 0x04 */
+        /* 0x05 */ 1 /* <ENQ> */, /* 0x05 */
+        /* 0x06 */ 1 /* <ACK> */, /* 0x06 */
+        /* 0x07 */ 1 /* <BEL> */, /* 0x07 */
+        /* 0x08 */ 1 /* <BS> */, /* 0x08 */
+        /* 0x09 */ 1 /* <HT> */, /* 0x09 */
+        /* 0x0a */ 1 /* <LF> */, /* 0x0a */
+        /* 0x0b */ 1 /* <VT> */, /* 0x0b */
+        /* 0x0c */ 1 /* <FF> */, /* 0x0c */
+        /* 0x0d */ 1 /* <CR> */, /* 0x0d */
+        /* 0x0e */ 1 /* <SO> */, /* 0x0e */
+        /* 0x0f */ 1 /* <SI> */, /* 0x0f */
+        /* 0x10 */ 1 /* <DLE> */, /* 0x10 */
+        /* 0x11 */ 1 /* <DC1> */, /* 0x11 */
+        /* 0x12 */ 1 /* <DC2> */, /* 0x12 */
+        /* 0x13 */ 1 /* <DC3> */, /* 0x13 */
+        /* 0x14 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x21 */
+        /* 0x22 */ 1 /* <"> */, /* 0x22 */
+        /* 0x23 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x42 */
+        /* 0x43 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x5b */
+        /* 0x5c */ 1 /* <\> */, /* 0x5c */
+        /* 0x5d */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x7c */
+        /* 0x7d */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0x9c */
+        /* 0x9d */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xbc */
+        /* 0xbd */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xdc */
+        /* 0xdd */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0xfc */
+        /* 0xfd */ 0,0, /* 0xfe */
+};
+
 /**
  * Allowable two-character 'common' escapes:
  */
@@ -1427,6 +1461,9 @@ static int is_allowed_whitespace(unsigned c) {
 }
 static int is_allowed_escape(unsigned c) {
     return Allowed_Escapes[c & 0xff];
+}
+static int is_simple_char(unsigned c) {
+    return !String_No_Passthrough[c & 0xff];
 }
 
 /* Clean up all our macros! */
