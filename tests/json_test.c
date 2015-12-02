@@ -47,12 +47,11 @@ void state_callback(jsonsl_t jsn,
             action,
             jsonsl_strtype(state->type));
             */
-
+    /*
     if (action == JSONSL_ACTION_POP) {
         size_t state_len = state->pos_cur - state->pos_begin;
-
-        const char *buf_begin = buf - state_len;
     }
+    */
 }
 
 int error_callback(jsonsl_t jsn,

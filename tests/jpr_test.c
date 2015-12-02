@@ -23,7 +23,7 @@ const char SampleJSON[] =
 static void check_path(const char *path)
 {
     jsonsl_error_t err;
-    int ii;
+    size_t ii;
     jsonsl_jpr_t jpr;
 
     fprintf(stderr, "=== Testing %s ===\n", path);
@@ -38,7 +38,7 @@ static void check_path(const char *path)
 
     for (ii = 0; ii < jpr->ncomponents; ii++) {
         struct jsonsl_jpr_component_st *comp = jpr->components + ii;
-        printf("[%d]: ", ii);
+        printf("[%lu]: ", ii);
         if (comp->ptype == JSONSL_PATH_ROOT) {
             printf("Root: /\n");
         } else if (comp->ptype == JSONSL_PATH_NUMERIC) {
@@ -110,9 +110,7 @@ static void push_callback(jsonsl_t jsn,
                           struct jsonsl_state_st *state,
                           const jsonsl_char_t *at)
 {
-    jsonsl_jpr_t jpr;
     struct lexer_global_st *global = (struct lexer_global_st*)jsn->data;
-    struct jsonsl_state_st *parent = jsonsl_last_state(jsn, state);
     jsonsl_jpr_match_t matchres;
     jsonsl_jpr_t matchjpr;
     if (state->type == JSONSL_T_HKEY) {
