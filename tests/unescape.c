@@ -151,7 +151,7 @@ void test_unicode_escape(void)
     escaped = "\\uTTTT";
     res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
     assert(res == 0);
-    assert(err == JSONSL_ERROR_UESCAPE_TOOSHORT);
+    assert(err == JSONSL_ERROR_PERCENT_BADHEX);
 
     escaped = "\\uaaa";
     res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);

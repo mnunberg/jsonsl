@@ -1169,6 +1169,44 @@ jsonsl__writeutf8(uint32_t pt, char *out)
     #undef ADD_OUTPUT
 }
 
+/* Thanks snej (https://github.com/mnunberg/jsonsl/issues/9) */
+static int
+jsonsl__digit2int(char ch) {
+    int d = ch - '0';
+    if ((unsigned) d < 10) {
+        return d;
+    }
+    d = ch - 'a';
+    if ((unsigned) d < 6) {
+        return d + 10;
+    }
+    d = ch - 'A';
+    if ((unsigned) d < 6) {
+        return d + 10;
+    }
+    return -1;
+}
+
+/* Assume 's' is at least 4 bytes long */
+static int
+jsonsl__get_uescape_16(const char *s)
+{
+    int ret = 0;
+    int cur;
+
+    #define GET_DIGIT(off) \
+        cur = jsonsl__digit2int(s[off]); \
+        if (cur == -1) { return -1; } \
+        ret |= (cur << (12 - (off * 4)));
+
+    GET_DIGIT(0);
+    GET_DIGIT(1);
+    GET_DIGIT(2);
+    GET_DIGIT(3);
+    #undef GET_DIGIT
+    return ret;
+}
+
 /**
  * Utility function to convert escape sequences
  */
@@ -1200,7 +1238,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
         return 0;
 
     for (; len; len--, c++, out++) {
-        unsigned uescval;
+        int uescval;
         if (in_escape) {
             /* inside a previously ignored escape. Ignore */
             in_escape = 0;
@@ -1252,11 +1290,10 @@ size_t jsonsl_util_unescape_ex(const char *in,
             UNESCAPE_BAIL(UESCAPE_TOOSHORT, 2);
         }
 
-        if (sscanf((const char *)(c+2), "%04X", &uescval) != 1) {
-            UNESCAPE_BAIL(UESCAPE_TOOSHORT, -1);
-        }
-
-        if (uescval == 0) {
+        uescval = jsonsl__get_uescape_16((const char *)c + 2);
+        if (uescval == -1) {
+            UNESCAPE_BAIL(PERCENT_BADHEX, -1);
+        } else if (uescval == 0) {
             UNESCAPE_BAIL(INVALID_CODEPOINT, 2);
         }
 
