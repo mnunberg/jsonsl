@@ -241,7 +241,9 @@ typedef enum {
 /* No leading root */ \
     X(JPR_NOROOT) \
 /* Allocation failure */ \
-    X(ENOMEM)
+    X(ENOMEM) \
+/* Invalid unicode codepoint detected (in case of escapes) */ \
+    X(INVALID_CODEPOINT)
 
 typedef enum {
     JSONSL_ERROR_SUCCESS = 0,
@@ -892,6 +894,13 @@ const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match);
  * to escape a '/' - however this may also be desired behavior. the JSON
  * spec is not clear on this, and therefore jsonsl leaves it up to you.
  *
+ * Additionally, sometimes you may wish to _normalize_ JSON. This is specifically
+ * true when dealing with 'u-escapes' which can be expressed perfectly fine
+ * as utf8. One use case for normalization is JPR string comparison, in which
+ * case two effectively equivalent strings may not match because one is using
+ * u-escapes and the other proper utf8. To normalize u-escapes only, pass in
+ * an empty `toEscape` table, enabling only the `u` index.
+ *
  * @param in The input string.
  * @param out An allocated output (should be the same size as in)
  * @param len the size of the buffer
@@ -908,6 +917,19 @@ const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match);
  * encountered.
  *
  * @return The effective size of the output buffer.
+ *
+ * @note
+ * This function now encodes the UTF8 equivalents of utf16 escapes (i.e.
+ * 'u-escapes'). Previously this would encode the escapes as utf16 literals,
+ * which while still correct in some sense was confusing for many (especially
+ * considering that the inputs were variations of char).
+ *
+ * @note
+ * The output buffer will never be larger than the input buffer, since
+ * standard escape sequences (i.e. '\t') occupy two bytes in the source
+ * but only one byte (when unescaped) in the output. Likewise u-escapes
+ * (i.e. \uXXXX) will occupy six bytes in the source, but at the most
+ * two bytes when escaped.
  */
 JSONSL_API
 size_t jsonsl_util_unescape_ex(const char *in,

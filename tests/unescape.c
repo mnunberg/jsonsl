@@ -1,9 +1,8 @@
+#undef NDEBUG
 #include <stdio.h>
 #include <stdlib.h>
 #include <jsonsl.h>
 #include <assert.h>
-#include <wchar.h>
-#include <locale.h>
 #include <string.h>
 #include "all-tests.h"
 
@@ -36,8 +35,7 @@ void test_null_escape(void)
     strtable['u'] = 1;
     out = malloc(strlen(escaped)+1);
     res = jsonsl_util_unescape(escaped, out, strlen(escaped), strtable, &err);
-    assert(res == 1);
-    assert(out[0] == '\0');
+    assert(res == 0);
     free(out);
 }
 
@@ -46,23 +44,16 @@ void test_null_escape(void)
  */
 void test_multibyte_escape(void)
 {
-    int mbres;
     unsigned flags;
-    wchar_t dest[4]; /* שלום */
-    escaped = "\\uD7A9\\uD79C\\uD795\\uD79D";
+    const char *exp = "\xd7\xa9\xd7\x9c\xd7\x95\xd7\x9d";
+    escaped = "\\u05e9\\u05dc\\u05d5\\u05dd";
     strtable['u'] = 1;
-    out = malloc(strlen(escaped));
-    res = jsonsl_util_unescape_ex(escaped,
-                                  out,
-                                  strlen(escaped),
-                                  strtable,
-                                  &flags,
-                                  &err,
-                                  NULL);
-    assert(res == 8);
-    mbres = mbstowcs(dest, out, 4);
-    assert(memcmp(L"שלום", dest,
-           8) == 0);
+    out = malloc(strlen(escaped) + 1);
+    res = jsonsl_util_unescape_ex(escaped, out, strlen(escaped), strtable,
+                                  &flags, &err, NULL);
+    assert(res != 0);
+    assert(res == strlen(exp));
+    assert(memcmp(exp, out, strlen(exp)) == 0);
     assert(flags & JSONSL_SPECIALf_NONASCII);
     free(out);
 }
@@ -114,19 +105,77 @@ void test_invalid_escape(void)
     free(out);
 }
 
+void test_unicode_escape(void)
+{
+    const char *exp = "\xe2\x82\xac";
+    char out_s[64] = { 0 };
+
+    escaped = "\\u20AC";
+    strtable['u'] = 1;
+    res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
+    assert(err == JSONSL_ERROR_SUCCESS);
+    assert(res == 3);
+    assert(0 == memcmp(exp, out_s, 3));
+
+    escaped = "\\u20ACHello";
+    exp = "\xe2\x82\xacHello";
+    memset(out_s, 0, sizeof out_s);
+    res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
+    assert(res == strlen(exp));
+    assert(0 == memcmp(exp, out_s, strlen(exp)));
+
+    escaped = "\\u0000";
+    memset(out_s, 0, sizeof out_s);
+    res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
+    assert(err == JSONSL_ERROR_INVALID_CODEPOINT);
+
+    /* Try with a surrogate pair */
+    escaped = "\\uD834\\uDD1E";
+    exp = "\xf0\x9d\x84\x9e";
+    res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
+    assert(res == 4);
+    assert(0 == memcmp(exp, out_s, 4));
+
+    /* Try with an incomplete surrogate */
+    res = jsonsl_util_unescape_ex(escaped, out_s, 6, strtable, NULL, &err, NULL);
+    assert(res == 0);
+    assert(err == JSONSL_ERROR_INVALID_CODEPOINT);
+
+    /* Try with an invalid pair */
+    escaped = "\\uD834\\u0020";
+    res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
+    assert(res == 0);
+    assert(err == JSONSL_ERROR_INVALID_CODEPOINT);
+
+    /* Try with invalid hex */
+    escaped = "\\uTTTT";
+    res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
+    assert(res == 0);
+    assert(err == JSONSL_ERROR_UESCAPE_TOOSHORT);
+
+    escaped = "\\uaaa";
+    res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
+    assert(res == 0);
+    assert(err == JSONSL_ERROR_UESCAPE_TOOSHORT);
+
+    /* ASCII Escapes */
+    exp = "simple space";
+    escaped = "simple\\u0020space";
+    res = jsonsl_util_unescape_ex(
+            escaped, out_s, strlen(escaped), strtable, NULL, &err, NULL);
+    assert(res == strlen(exp));
+    assert(err == JSONSL_ERROR_SUCCESS);
+    assert(memcmp(exp, out_s, res) == 0);
+}
+
 JSONSL_TEST_UNESCAPE_FUNC
 {
-    char *curlocale = setlocale(LC_ALL, "");
     test_single_uescape();
     test_null_escape();
-    if (curlocale && strstr(curlocale, "UTF-8") != NULL) {
-        test_multibyte_escape();
-    } else {
-        fprintf(stderr,
-                "Skipping multibyte tests because LC_ALL is not set to UTF8\n");
-    }
     test_ignore_escape();
     test_replacement_escape();
     test_invalid_escape();
+    test_multibyte_escape();
+    test_unicode_escape();
     return 0;
 }

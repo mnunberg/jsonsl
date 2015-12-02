@@ -1145,6 +1145,30 @@ const char *jsonsl_strmatchtype(jsonsl_jpr_match_t match)
 
 #endif /* JSONSL_WITH_JPR */
 
+static char *
+jsonsl__writeutf8(uint32_t pt, char *out)
+{
+    #define ADD_OUTPUT(c) *out = (char)(c); out++;
+
+    if (pt < 0x80) {
+        ADD_OUTPUT(pt);
+    } else if (pt < 0x800) {
+        ADD_OUTPUT((pt >> 6) | 0xC0);
+        ADD_OUTPUT((pt & 0x3F) | 0x80);
+    } else if (pt < 0x10000) {
+        ADD_OUTPUT((pt >> 12) | 0xE0);
+        ADD_OUTPUT(((pt >> 6) & 0x3F) | 0x80);
+        ADD_OUTPUT((pt & 0x3F) | 0x80);
+    } else {
+        ADD_OUTPUT((pt >> 18) | 0xF0);
+        ADD_OUTPUT(((pt >> 12) & 0x3F) | 0x80);
+        ADD_OUTPUT(((pt >> 6) & 0x3F) | 0x80);
+        ADD_OUTPUT((pt & 0x3F) | 0x80);
+    }
+    return out;
+    #undef ADD_OUTPUT
+}
+
 /**
  * Utility function to convert escape sequences
  */
@@ -1158,22 +1182,25 @@ size_t jsonsl_util_unescape_ex(const char *in,
                                const char **errat)
 {
     const unsigned char *c = (const unsigned char*)in;
+    char *begin_p = out;
     int in_escape = 0;
-    size_t origlen = len;
-    /* difference between the length of the input buffer and the output buffer */
-    size_t ndiff = 0;
-    if (oflags) {
-        *oflags = 0;
+    unsigned oflags_s;
+    uint16_t last_codepoint = 0;
+
+    if (!oflags) {
+        oflags = &oflags_s;
     }
-#define UNESCAPE_BAIL(e,offset) \
-    *err = JSONSL_ERROR_##e; \
-    if (errat) { \
-        *errat = (const char*)(c+ (ptrdiff_t)(offset)); \
-    } \
-    return 0;
+    *oflags = 0;
+
+    #define UNESCAPE_BAIL(e,offset) \
+        *err = JSONSL_ERROR_##e; \
+        if (errat) { \
+            *errat = (const char*)(c+ (ptrdiff_t)(offset)); \
+        } \
+        return 0;
 
     for (; len; len--, c++, out++) {
-        unsigned int uesc_val[2];
+        unsigned uescval;
         if (in_escape) {
             /* inside a previously ignored escape. Ignore */
             in_escape = 0;
@@ -1214,7 +1241,6 @@ size_t jsonsl_util_unescape_ex(const char *in,
                 *out = c[1];
             }
             len--;
-            ndiff++;
             c++;
             /* do not assign, just continue */
             continue;
@@ -1222,49 +1248,62 @@ size_t jsonsl_util_unescape_ex(const char *in,
 
         /* next == 'u' */
         if (len < 6) {
-            /* Need at least six characters:
-             * { [0] = '\\', [1] = 'u', [2] = 'f', [3] = 'f', [4] = 'f', [5] = 'f' }
-             */
+            /* Need at least six characters.. */
+            UNESCAPE_BAIL(UESCAPE_TOOSHORT, 2);
+        }
+
+        if (sscanf((const char *)(c+2), "%04X", &uescval) != 1) {
             UNESCAPE_BAIL(UESCAPE_TOOSHORT, -1);
         }
 
-        if (sscanf((const char*)(c+2), "%02x%02x", uesc_val, uesc_val+1) != 2) {
-            /* We treat the sequence as two octets */
-            UNESCAPE_BAIL(UESCAPE_TOOSHORT, -1);
+        if (uescval == 0) {
+            UNESCAPE_BAIL(INVALID_CODEPOINT, 2);
         }
 
-        /* By now, we gobble up all the six bytes (current implied + 5 next
-         * characters), and have at least four missing bytes from the output
-         * buffer.
-         */
-        len -= 5;
-        c += 5;
+        if (last_codepoint) {
+            uint16_t w1 = last_codepoint, w2 = uescval;
+            uint32_t cp;
 
-        ndiff += 4;
-        if (uesc_val[0] == 0) {
-            /* only one byte is extracted from the two
-             * possible octets. Increment the diff counter by one.
-             */
-            *out = uesc_val[1];
-            if (oflags && *(unsigned char*)out > 0x7f) {
-                *oflags |= JSONSL_SPECIALf_NONASCII;
+            if (uescval < 0xDC00 || uescval > 0xDFFF) {
+                UNESCAPE_BAIL(INVALID_CODEPOINT, -1);
             }
-            ndiff++;
+
+            cp = (w1 & 0x3FF) << 10;
+            cp |= (w2 & 0x3FF);
+            cp += 0x10000;
+
+            out = jsonsl__writeutf8(cp, out) - 1;
+            last_codepoint = 0;
+
+        } else if (uescval < 0xD800 || uescval > 0xDFFF) {
+            *oflags |= JSONSL_SPECIALf_NONASCII;
+            out = jsonsl__writeutf8(uescval, out) - 1;
+
+        } else if (uescval > 0xD7FF && uescval < 0xDC00) {
+            *oflags |= JSONSL_SPECIALf_NONASCII;
+            last_codepoint = uescval;
+            out--;
         } else {
-            *(out++) = uesc_val[0];
-            *out = uesc_val[1];
-            if (oflags && (uesc_val[0] > 0x7f || uesc_val[1] > 0x7f)) {
-                *oflags |= JSONSL_SPECIALf_NONASCII;
-            }
+            UNESCAPE_BAIL(INVALID_CODEPOINT, 2);
         }
+
+        /* Post uescape cleanup */
+        len -= 5; /* Gobble up 5 chars after 'u' */
+        c += 5;
         continue;
 
         /* Only reached by previous branches */
         GT_ASSIGN:
         *out = *c;
     }
+
+    if (last_codepoint) {
+        *err = JSONSL_ERROR_INVALID_CODEPOINT;
+        return 0;
+    }
+
     *err = JSONSL_ERROR_SUCCESS;
-    return origlen - ndiff;
+    return out - begin_p;
 }
 
 /**
