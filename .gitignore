@@ -2,12 +2,10 @@
 *.dll
 *.exe
 *.dylib
+*.dSYM
+*.swp
 share
 tests/jpr_test
 tests/json_test
 tests/unescape
-vs/Debug
-vs/Release
-vs/*.user
-vs/*.suo
-vs/*.filters
+tests/cxxtest
