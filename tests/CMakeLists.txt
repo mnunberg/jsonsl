@@ -9,6 +9,8 @@ TARGET_LINK_LIBRARIES(jpr_test jsonsl)
 ADD_EXECUTABLE(unescape unescape.c)
 TARGET_LINK_LIBRARIES(unescape jsonsl)
 
+ADD_EXECUTABLE(cxxtest cxxtest.cpp)
+
 FILE(GLOB samples_ok ${CMAKE_BINARY_DIR}/share/*
                      ${CMAKE_BINARY_DIR}/jsc/pass*.json)
 FILE(GLOB samples_bad ${CMAKE_BINARY_DIR}/share/jsc/fail*.json)
@@ -16,3 +18,4 @@ ADD_TEST(okparse json_test ${samples_ok})
 ADD_TEST(badparse failure_test ${samples_bad})
 ADD_TEST(jsonpointer jpr_test)
 ADD_TEST(unescape unescape)
+ADD_TEST(cxxtest cxxtest)

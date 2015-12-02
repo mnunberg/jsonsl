@@ -17,8 +17,12 @@ CFLAGS+=\
 	   -O3 $(GCCFLAGS) \
 	   -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC \
 
+CXXFLAGS+=\
+		  -Wall -std=c++03 -pedantic -O3 -I$(LIBJSONSL_DIR)
+
 export CFLAGS
 export LDFLAGS
+export CXXFLAGS
 
 DYLIBPREFIX=lib
 ifeq ($(shell uname -s),Darwin)

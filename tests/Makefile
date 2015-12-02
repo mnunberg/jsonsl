@@ -1,4 +1,4 @@
-TESTMODS= json_test jpr_test unescape
+TESTMODS= json_test jpr_test unescape cxxtest
 
 all: $(TESTMODS)
 	./json_test ../share/*
