@@ -158,11 +158,9 @@ static int
 jsonsl__str_fastparse(jsonsl_t jsn,
                       const jsonsl_uchar_t **bytes_p, size_t *nbytes_p)
 {
-    int exhausted = 1;
-    size_t nbytes = *nbytes_p;
     const jsonsl_uchar_t *bytes = *bytes_p;
-
-    for (; nbytes; nbytes--, bytes++) {
+    const jsonsl_uchar_t *end;
+    for (end = bytes + *nbytes_p; bytes != end; bytes++) {
         if (
 #ifdef JSONSL_USE_WCHAR
                 *bytes >= 0x100 ||
@@ -171,20 +169,17 @@ jsonsl__str_fastparse(jsonsl_t jsn,
             INCR_METRIC(TOTAL);
             INCR_METRIC(STRINGY_INSIGNIFICANT);
         } else {
-            exhausted = 0;
-            break;
+            /* Once we're done here, re-calculate the position variables */
+            jsn->pos += (bytes - *bytes_p);
+            *nbytes_p -= (bytes - *bytes_p);
+            *bytes_p = bytes;
+            return FASTPARSE_BREAK;
         }
     }
 
     /* Once we're done here, re-calculate the position variables */
-    jsn->pos += (*nbytes_p - nbytes);
-    if (exhausted) {
-        return FASTPARSE_EXHAUSTED;
-    }
-
-    *nbytes_p = nbytes;
-    *bytes_p = bytes;
-    return FASTPARSE_BREAK;
+    jsn->pos += (bytes - *bytes_p);
+    return FASTPARSE_EXHAUSTED;
 }
 
 /* Functions exactly like str_fastparse, except it also accepts a 'state'
