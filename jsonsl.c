@@ -1293,7 +1293,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
         }
 
         if (last_codepoint) {
-            uint16_t w1 = last_codepoint, w2 = uescval;
+            uint16_t w1 = last_codepoint, w2 = (uint16_t)uescval;
             uint32_t cp;
 
             if (uescval < 0xDC00 || uescval > 0xDFFF) {
@@ -1313,7 +1313,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
 
         } else if (uescval > 0xD7FF && uescval < 0xDC00) {
             *oflags |= JSONSL_SPECIALf_NONASCII;
-            last_codepoint = uescval;
+            last_codepoint = (uint16_t)uescval;
             out--;
         } else {
             UNESCAPE_BAIL(INVALID_CODEPOINT, 2);
