@@ -1216,7 +1216,6 @@ size_t jsonsl_util_unescape_ex(const char *in,
 {
     const unsigned char *c = (const unsigned char*)in;
     char *begin_p = out;
-    int in_escape = 0;
     unsigned oflags_s;
     uint16_t last_codepoint = 0;
 
@@ -1234,12 +1233,6 @@ size_t jsonsl_util_unescape_ex(const char *in,
 
     for (; len; len--, c++, out++) {
         int uescval;
-        if (in_escape) {
-            /* inside a previously ignored escape. Ignore */
-            in_escape = 0;
-            goto GT_ASSIGN;
-        }
-
         if (*c != '\\') {
             /* Not an escape, so we don't care about this */
             goto GT_ASSIGN;
@@ -1251,12 +1244,12 @@ size_t jsonsl_util_unescape_ex(const char *in,
         if (!is_allowed_escape(c[1])) {
             UNESCAPE_BAIL(ESCAPE_INVALID, 1)
         }
-        if ((toEscape[(unsigned char)c[1] & 0x7f] == 0 &&
+        if ((toEscape && toEscape[(unsigned char)c[1] & 0x7f] == 0 &&
                 c[1] != '\\' && c[1] != '"')) {
-            /* if we don't want to unescape this string, just continue with
-             * the escape flag set
-             */
-            in_escape = 1;
+            /* if we don't want to unescape this string, write the escape sequence to the output */
+            *out++ = *c++;
+            if (--len == 0)
+                break;
             goto GT_ASSIGN;
         }
 
