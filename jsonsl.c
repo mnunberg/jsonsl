@@ -158,11 +158,9 @@ static int
 jsonsl__str_fastparse(jsonsl_t jsn,
                       const jsonsl_uchar_t **bytes_p, size_t *nbytes_p)
 {
-    int exhausted = 1;
-    size_t nbytes = *nbytes_p;
     const jsonsl_uchar_t *bytes = *bytes_p;
-
-    for (; nbytes; nbytes--, bytes++) {
+    const jsonsl_uchar_t *end;
+    for (end = bytes + *nbytes_p; bytes != end; bytes++) {
         if (
 #ifdef JSONSL_USE_WCHAR
                 *bytes >= 0x100 ||
@@ -171,20 +169,17 @@ jsonsl__str_fastparse(jsonsl_t jsn,
             INCR_METRIC(TOTAL);
             INCR_METRIC(STRINGY_INSIGNIFICANT);
         } else {
-            exhausted = 0;
-            break;
+            /* Once we're done here, re-calculate the position variables */
+            jsn->pos += (bytes - *bytes_p);
+            *nbytes_p -= (bytes - *bytes_p);
+            *bytes_p = bytes;
+            return FASTPARSE_BREAK;
         }
     }
 
     /* Once we're done here, re-calculate the position variables */
-    jsn->pos += (*nbytes_p - nbytes);
-    if (exhausted) {
-        return FASTPARSE_EXHAUSTED;
-    }
-
-    *nbytes_p = nbytes;
-    *bytes_p = bytes;
-    return FASTPARSE_BREAK;
+    jsn->pos += (bytes - *bytes_p);
+    return FASTPARSE_EXHAUSTED;
 }
 
 /* Functions exactly like str_fastparse, except it also accepts a 'state'
@@ -1221,7 +1216,6 @@ size_t jsonsl_util_unescape_ex(const char *in,
 {
     const unsigned char *c = (const unsigned char*)in;
     char *begin_p = out;
-    int in_escape = 0;
     unsigned oflags_s;
     uint16_t last_codepoint = 0;
 
@@ -1239,12 +1233,6 @@ size_t jsonsl_util_unescape_ex(const char *in,
 
     for (; len; len--, c++, out++) {
         int uescval;
-        if (in_escape) {
-            /* inside a previously ignored escape. Ignore */
-            in_escape = 0;
-            goto GT_ASSIGN;
-        }
-
         if (*c != '\\') {
             /* Not an escape, so we don't care about this */
             goto GT_ASSIGN;
@@ -1256,12 +1244,12 @@ size_t jsonsl_util_unescape_ex(const char *in,
         if (!is_allowed_escape(c[1])) {
             UNESCAPE_BAIL(ESCAPE_INVALID, 1)
         }
-        if ((toEscape[(unsigned char)c[1] & 0x7f] == 0 &&
+        if ((toEscape && toEscape[(unsigned char)c[1] & 0x7f] == 0 &&
                 c[1] != '\\' && c[1] != '"')) {
-            /* if we don't want to unescape this string, just continue with
-             * the escape flag set
-             */
-            in_escape = 1;
+            /* if we don't want to unescape this string, write the escape sequence to the output */
+            *out++ = *c++;
+            if (--len == 0)
+                break;
             goto GT_ASSIGN;
         }
 
@@ -1298,7 +1286,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
         }
 
         if (last_codepoint) {
-            uint16_t w1 = last_codepoint, w2 = uescval;
+            uint16_t w1 = last_codepoint, w2 = (uint16_t)uescval;
             uint32_t cp;
 
             if (uescval < 0xDC00 || uescval > 0xDFFF) {
@@ -1318,7 +1306,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
 
         } else if (uescval > 0xD7FF && uescval < 0xDC00) {
             *oflags |= JSONSL_SPECIALf_NONASCII;
-            last_codepoint = uescval;
+            last_codepoint = (uint16_t)uescval;
             out--;
         } else {
             UNESCAPE_BAIL(INVALID_CODEPOINT, 2);
