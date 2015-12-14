@@ -765,6 +765,10 @@ struct jsonsl_jpr_st {
     struct jsonsl_jpr_component_st *components;
     size_t ncomponents;
 
+    /**Type of the match to be expected. If nonzero, will be compared against
+     * the actual type */
+    unsigned match_type;
+
     /** Base of allocated string for components */
     char *basestr;
 
@@ -772,8 +776,6 @@ struct jsonsl_jpr_st {
     char *orig;
     size_t norig;
 };
-
-
 
 /**
  * Create a new JPR object.
@@ -816,6 +818,38 @@ jsonsl_jpr_match_t jsonsl_jpr_match(jsonsl_jpr_t jpr,
                                     unsigned int parent_type,
                                     unsigned int parent_level,
                                     const char *key, size_t nkey);
+
+/**
+ * Alternate matching algorithm. This matching algorithm does not use
+ * JSONPointer but relies on a more structured searching mechanism. It
+ * assumes that there is a clear distinction between array indices and
+ * object keys. In this case, the jsonsl_path_component_st::ptype should
+ * be set to @ref JSONSL_PATH_NUMERIC for an array index (the
+ * jsonsl_path_comonent_st::is_arridx field will be removed in a future
+ * version).
+ *
+ * @param jpr The path
+ * @param parent The parent structure. Can be NULL if this is the root object
+ * @param child The child structure. Should not be NULL
+ * @param key Object key, if an object
+ * @param nkey Length of object key
+ * @return Status constant if successful
+ *
+ * @note
+ * For successful matching, both the key and the path itself should be normalized
+ * to contain 'proper' utf8 sequences rather than utf16 '\uXXXX' escapes. This
+ * should currently be done in the application. Another version of this function
+ * may use a temporary buffer in such circumstances (allocated by the application).
+ *
+ * Since this function also checks the state of the child, it should only
+ * be called on PUSH callbacks, and not POP callbacks
+ */
+JSONSL_API
+jsonsl_jpr_match_t
+jsonsl_path_match(jsonsl_jpr_t jpr,
+                  const struct jsonsl_state_st *parent,
+                  const struct jsonsl_state_st *child,
+                  const char *key, size_t nkey);
 
 
 /**

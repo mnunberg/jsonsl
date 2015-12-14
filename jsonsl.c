@@ -936,6 +936,78 @@ void jsonsl_jpr_destroy(jsonsl_jpr_t jpr)
     free(jpr);
 }
 
+/**
+ * Call when there is a possibility of a match, either as a final match or
+ * as a path within a match
+ * @param jpr The JPR path
+ * @param component Component corresponding to the current element
+ * @param prlevel The level of the *parent*
+ * @param chtype The type of the child
+ * @return Match status
+ */
+static jsonsl_jpr_match_t
+jsonsl__match_continue(jsonsl_jpr_t jpr,
+                       const struct jsonsl_jpr_component_st *component,
+                       unsigned prlevel, unsigned chtype)
+{
+    const struct jsonsl_jpr_component_st *next_comp = component + 1;
+    if (prlevel == jpr->ncomponents - 1) {
+        /* This is the match. Check the expected type of the match against
+         * the child */
+        if (jpr->match_type == 0 || jpr->match_type == chtype) {
+            return JSONSL_MATCH_COMPLETE;
+        } else {
+            return JSONSL_MATCH_TYPE_MISMATCH;
+        }
+    }
+    if (chtype == JSONSL_T_LIST) {
+        if (next_comp->ptype == JSONSL_PATH_NUMERIC) {
+            return JSONSL_MATCH_POSSIBLE;
+        } else {
+            return JSONSL_MATCH_TYPE_MISMATCH;
+        }
+    } else if (chtype == JSONSL_T_OBJECT) {
+        if (next_comp->ptype == JSONSL_PATH_NUMERIC) {
+            return JSONSL_MATCH_TYPE_MISMATCH;
+        } else {
+            return JSONSL_MATCH_POSSIBLE;
+        }
+    } else {
+        return JSONSL_MATCH_TYPE_MISMATCH;
+    }
+}
+
+JSONSL_API
+jsonsl_jpr_match_t
+jsonsl_path_match(jsonsl_jpr_t jpr,
+                  const struct jsonsl_state_st *parent,
+                  const struct jsonsl_state_st *child,
+                  const char *key, size_t nkey)
+{
+    const struct jsonsl_jpr_component_st *comp;
+    if (!parent) {
+        /* No parent. Return immediately since it's always a match */
+        return jsonsl__match_continue(jpr, jpr->components, 0, child->type);
+    }
+
+    comp = jpr->components + parent->level;
+
+    /* note that we don't need to verify the type of the match, this is
+     * always done through the previous call to jsonsl__match_continue.
+     * If we are in a POSSIBLE tree then we can be certain the types (at
+     * least at this level) are correct */
+    if (parent->type == JSONSL_T_OBJECT) {
+        if (comp->len != nkey || strncmp(key, comp->pstr, nkey) != 0) {
+            return JSONSL_MATCH_NOMATCH;
+        }
+    } else {
+        if (comp->idx != parent->nelem - 1) {
+            return JSONSL_MATCH_NOMATCH;
+        }
+    }
+    return jsonsl__match_continue(jpr, comp, parent->level, child->type);
+}
+
 JSONSL_API
 jsonsl_jpr_match_t
 jsonsl_jpr_match(jsonsl_jpr_t jpr,
