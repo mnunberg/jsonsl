@@ -433,6 +433,7 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
             }
 
             GT_SPECIAL_POP:
+            jsn->can_insert = 0;
             if (IS_NORMAL_NUMBER) {
                 /* Nothing */
             } else if (state->special_flags == JSONSL_SPECIALf_ZERO ||
