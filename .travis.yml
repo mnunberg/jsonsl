@@ -1,7 +1,22 @@
 language: c
 
+os:
+  - linux
+  - osx
+
 compiler:
   - gcc
   - clang
 
-script: make && make check
+addons:
+  apt:
+    packages:
+      - tar
+      - doxygen
+
+script:
+  - make
+  - make check
+  - make doc
+  - make dist
+  - make clean
