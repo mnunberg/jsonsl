@@ -59,14 +59,15 @@ run(int validate_utf8)
 {
     long long times = 0;
     double starttime;
+    jsonsl_t jsn;
 
     starttime = mygettime();
-    jsonsl_t jsn = jsonsl_new(128);
+    jsn = jsonsl_new(128);
     jsn->error_callback = error_callback;
 
     /* allocate a parser */
     for (;;) {
-		int i;
+        int i;
         {
             double now = mygettime();
             if (now - starttime >= PARSE_TIME_SECS) break;

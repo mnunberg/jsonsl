@@ -377,5 +377,5 @@ int main(int argc, char **argv) {
     for (ii = 1; ii < argc && argv[ii]; ii++) {
         parse_one_file(argv[ii]);
     }
-    return 0;
+    return EXIT_SUCCESS;
 }

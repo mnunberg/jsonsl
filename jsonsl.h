@@ -314,7 +314,7 @@ struct jsonsl_state_st {
 
 
 
-    /*TODO: merge this and special_flags into a union */
+    /* TODO: merge this and special_flags into a union */
 
 
     /**
