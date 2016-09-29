@@ -101,6 +101,7 @@ static char get_escape_equiv(unsigned);
 JSONSL_API
 jsonsl_t jsonsl_new(int nlevels)
 {
+    unsigned int ii;
     struct jsonsl_st *jsn = (struct jsonsl_st *)
             calloc(1, sizeof (*jsn) +
                     ( (nlevels-1) * sizeof (struct jsonsl_state_st) )
@@ -109,13 +110,15 @@ jsonsl_t jsonsl_new(int nlevels)
     jsn->levels_max = nlevels;
     jsn->max_callback_level = -1;
     jsonsl_reset(jsn);
+    for (ii = 0; ii < jsn->levels_max; ii++) {
+        jsn->stack[ii].level = ii;
+    }
     return jsn;
 }
 
 JSONSL_API
 void jsonsl_reset(jsonsl_t jsn)
 {
-    unsigned int ii;
     jsn->tok_last = 0;
     jsn->can_insert = 1;
     jsn->pos = 0;
@@ -123,12 +126,6 @@ void jsonsl_reset(jsonsl_t jsn)
     jsn->stopfl = 0;
     jsn->in_escape = 0;
     jsn->expecting = 0;
-
-    memset(jsn->stack, 0, (jsn->levels_max * sizeof (struct jsonsl_state_st)));
-
-    for (ii = 0; ii < jsn->levels_max; ii++) {
-        jsn->stack[ii].level = ii;
-    }
 }
 
 JSONSL_API
