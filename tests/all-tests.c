@@ -20,7 +20,7 @@ enum {
 
 #define TEST_TYPE_ALL (TEST_TYPE_JSON|TEST_TYPE_JPR|TEST_TYPE_UNESCAPE)
 
-cliopts_entry entries[] = {
+static cliopts_entry entries[] = {
         { 'q', "quiet", CLIOPTS_ARGT_NONE,
                 &WantQuiet,
                 "Whether to not output verbose test information"
@@ -53,7 +53,10 @@ static int build_list(void)
     char rbuf[512];
 
     if (json_files) {
-        JsonFileList = malloc(sizeof(char**), 2);
+        JsonFileList = malloc(2 * sizeof(char**));
+        if(JsonFileList == NULL) {
+	    return -1;
+        }
         JsonFileList[1] = NULL;
         JsonFileList[0] = json_files;
         return 0;
@@ -74,6 +77,10 @@ static int build_list(void)
         char *curbuf;
         int slen = strlen(rbuf);
         curbuf = malloc(slen + 1);
+        if(curbuf == NULL) {
+            fclose(fp);
+            return -1;
+        }
         memcpy(curbuf, rbuf, slen);
         curbuf[slen-1] = '\0';
 
@@ -83,8 +90,15 @@ static int build_list(void)
             } else {
                 curalloc *=  2;
             }
+            void* tmp = JsonFileList;
             JsonFileList = realloc(JsonFileList,
                                    (curalloc + 1) * sizeof(char**));
+            if(JsonFileList == NULL) {
+                free(tmp);
+                free(curbuf);
+                fclose(fp);
+                return -1;
+            }
         }
         JsonFileList[curpos++] = curbuf;
     }
@@ -145,7 +159,6 @@ int main(int argc, char **argv)
         }
     }
     if (test_mode & TEST_TYPE_JPR) {
-
         if (jsonsl_test_jpr() != 0) {
             return EXIT_FAILURE;
         }

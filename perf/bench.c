@@ -42,6 +42,7 @@ int main(int argc, char **argv)
     }
     buf = malloc(sb.st_size + 1);
     fread(buf, 1, sb.st_size, fh);
+    fclose(fh);
     buf[sb.st_size] = '\0';
     begin_time = time(NULL);
 

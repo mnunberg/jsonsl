@@ -4,4 +4,12 @@ compiler:
   - gcc
   - clang
 
-script: make && make check
+addons:
+  apt:
+    packages:
+      - cppcheck
+
+script:
+  - make
+  - make check
+  - cppcheck --quiet *.h *.c tests/ perf/ examples/
