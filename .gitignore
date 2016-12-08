@@ -25,6 +25,8 @@
 *.exe
 *.dylib
 *.dSYM
+perf/bench
+perf/yajl-perftest
 share
 
 # Generated folders

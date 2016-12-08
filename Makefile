@@ -65,7 +65,7 @@ json_examples_tarball:
 check: $(LIB_FQNAME) share jsonsl.c
 	JSONSL_QUIET_TESTS=1 $(MAKE) -C tests
 
-bench:
+bench: share
 	$(MAKE) -C perf run-benchmarks
 
 $(LIB_FQNAME): jsonsl.c
