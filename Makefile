@@ -46,6 +46,10 @@ else
 	LIBFLAGS=$(DYLIBFLAGS)
 endif
 
+ifdef JSONSL_PARSE_NAN
+	CFLAGS+="-DJSONSL_PARSE_NAN"
+endif
+
 all: $(LIB_FQNAME)
 
 install: all

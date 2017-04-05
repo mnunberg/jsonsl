@@ -4,4 +4,8 @@ compiler:
   - gcc
   - clang
 
-script: make && make check
+env:
+  - PARSE_NAN=1
+  - PARSE_NAN=0
+
+script: ./compile-travis.sh
