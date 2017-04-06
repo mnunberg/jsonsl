@@ -31,6 +31,12 @@ typedef char jsonsl_char_t;
 typedef unsigned char jsonsl_uchar_t;
 #endif /* JSONSL_USE_WCHAR */
 
+#ifdef JSONSL_PARSE_NAN
+#define JSONSL__NAN_PROXY JSONSL_SPECIALf_NAN
+#else
+#define JSONSL__NAN_PROXY 0
+#endif
+
 /* Stolen from http-parser.h, and possibly others */
 #if defined(_WIN32) && !defined(__MINGW32__) && (!defined(_MSC_VER) || _MSC_VER<1600)
 typedef __int8 int8_t;
@@ -143,7 +149,8 @@ typedef enum {
     X(NULL,         1<<4) \
     X(FLOAT,        1<<5) \
     X(EXPONENT,     1<<6) \
-    X(NONASCII,     1<<7)
+    X(NONASCII,     1<<7) \
+    X(NAN,          1<<8)
 typedef enum {
 #define X(o,b) \
     JSONSL_SPECIALf_##o = b,
@@ -165,7 +172,8 @@ typedef enum {
     JSONSL_SPECIALf_BOOLEAN = (JSONSL_SPECIALf_TRUE|JSONSL_SPECIALf_FALSE),
 
     /** Type is an "extended", not integral type (but numeric) */
-    JSONSL_SPECIALf_NUMNOINT = (JSONSL_SPECIALf_FLOAT|JSONSL_SPECIALf_EXPONENT)
+   JSONSL_SPECIALf_NUMNOINT =
+       (JSONSL_SPECIALf_FLOAT|JSONSL_SPECIALf_EXPONENT|JSONSL_SPECIALf_NAN)
 } jsonsl_special_t;
 
 

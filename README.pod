@@ -355,6 +355,13 @@ instead of the good 'ole C<char>. Of course you would need to
 handle processing the stream correctly to make sure the multibyte
 stream was complete.
 
+=head2 NaN
+
+By default, JSONSL does not consider an object like C<{"n": NaN}> to be valid
+syntax. Compile with C<JSONSL_PARSE_NAN> defined to parse NaN as "not-a-number".
+JSONSL will then execute your POP callback with C<state-E<gt>special_flags> set
+to C<JSONSL_SPECIALf_NUMNOINT | JSONSL_SPECIALf_NAN> when it parses a NaN.
+
 =head2 WINDOWS
 
 JSONSL Now has a visual studio C<.sln> and C<.vcxproj> files in the
