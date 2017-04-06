@@ -107,8 +107,13 @@ jsonsl_t jsonsl_new(int nlevels)
                     ( (nlevels-1) * sizeof (struct jsonsl_state_st) )
             );
 
-    jsn->levels_max = nlevels;
-    jsn->max_callback_level = -1;
+    if (nlevels < 0) {
+       return NULL;
+    }
+
+    jsn->levels_max = (unsigned int)nlevels;
+    jsn->max_callback_level = UINT_MAX;
+
     jsonsl_reset(jsn);
     for (ii = 0; ii < jsn->levels_max; ii++) {
         jsn->stack[ii].level = ii;
@@ -859,7 +864,6 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
 
     if (path == NULL || *path != '/') {
         JPR_BAIL(JSONSL_ERROR_JPR_NOROOT);
-        return NULL;
     }
 
     count = 1;
