@@ -863,7 +863,6 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
 
     if (path == NULL || *path != '/') {
         JPR_BAIL(JSONSL_ERROR_JPR_NOROOT);
-        return NULL;
     }
 
     count = 1;
