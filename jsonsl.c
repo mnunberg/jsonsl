@@ -102,14 +102,16 @@ JSONSL_API
 jsonsl_t jsonsl_new(int nlevels)
 {
     unsigned int ii;
-    struct jsonsl_st *jsn = (struct jsonsl_st *)
+    struct jsonsl_st * jsn;
+    
+    if (nlevels < 2) {
+        return NULL;
+    }
+
+    jsn = (struct jsonsl_st *)
             calloc(1, sizeof (*jsn) +
                     ( (nlevels-1) * sizeof (struct jsonsl_state_st) )
             );
-
-    if (nlevels < 0) {
-        return NULL;
-    }
 
     jsn->levels_max = (unsigned int) nlevels;
     jsn->max_callback_level = UINT_MAX;
