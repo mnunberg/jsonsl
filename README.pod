@@ -355,12 +355,14 @@ instead of the good 'ole C<char>. Of course you would need to
 handle processing the stream correctly to make sure the multibyte
 stream was complete.
 
-=head2 NaN
+=head2 NaN, Infinity, -Infinity
 
-By default, JSONSL does not consider an object like C<{"n": NaN}> to be valid
-syntax. Compile with C<JSONSL_PARSE_NAN> defined to parse NaN as "not-a-number".
+By default, JSONSL does not consider objects like C<{"n": NaN}>,
+C<{"n": Infinity}>, or C<{"n": -Infinity}> to be valid.
+Compile with C<JSONSL_PARSE_NAN> defined to parse these non-numbers.
 JSONSL will then execute your POP callback with C<state-E<gt>special_flags> set
-to C<JSONSL_SPECIALf_NUMNOINT | JSONSL_SPECIALf_NAN> when it parses a NaN.
+to C<JSONSL_SPECIALf_NAN> when it parses NaN, C<JSONSL_SPECIALf_INF> for
+Infinity, and C<JSONSL_SPECIALf_INF | JSONSL_SPECIALf_SIGNED> for -Infinity.
 
 =head2 WINDOWS
 

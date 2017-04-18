@@ -12,6 +12,8 @@ use Getopt::Long;
 ################################################################################
 my @special_begin;
 $special_begin[ord('-')] = 'JSONSL_SPECIALf_DASH';
+$special_begin[ord('i')] = 'JSONSL__INF_PROXY';
+$special_begin[ord('I')] = 'JSONSL__INF_PROXY';
 $special_begin[ord('t')] = 'JSONSL_SPECIALf_TRUE';
 $special_begin[ord('f')] = 'JSONSL_SPECIALf_FALSE';
 $special_begin[ord('n')] = 'JSONSL_SPECIALf_NULL|JSONSL__NAN_PROXY';
