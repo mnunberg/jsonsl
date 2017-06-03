@@ -217,6 +217,8 @@ typedef enum {
     X(STRAY_TOKEN) \
 /* We were expecting a token before this one */ \
     X(MISSING_TOKEN) \
+/* We were expecting a comma befoe this token */ \
+    X(MISSING_COMMA) \
 /* Cannot insert because the container is not ready */ \
     X(CANT_INSERT) \
 /* Found a '\' outside a string */ \
