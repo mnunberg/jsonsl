@@ -17,5 +17,6 @@ perf/perftest.c
 srcutil/genchartables.pl
 tests/Makefile
 tests/jpr_test.c
+tests/api_test.c
 tests/json_test.c
 tests/unescape.c

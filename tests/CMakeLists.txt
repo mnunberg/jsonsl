@@ -4,6 +4,9 @@ TARGET_LINK_LIBRARIES(json_test jsonsl)
 ADD_EXECUTABLE(failure_test fail-tests.c)
 TARGET_LINK_LIBRARIES(failure_test jsonsl)
 
+ADD_EXECUTABLE(api_test api_test.c)
+TARGET_LINK_LIBRARIES(api_test jsonsl)
+
 ADD_EXECUTABLE(jpr_test jpr_test.c)
 TARGET_LINK_LIBRARIES(jpr_test jsonsl)
 ADD_EXECUTABLE(unescape unescape.c)
@@ -18,6 +21,7 @@ FILE(GLOB samples_ok ${CMAKE_BINARY_DIR}/share/*
 FILE(GLOB samples_bad ${CMAKE_BINARY_DIR}/share/jsc/fail*.json)
 ADD_TEST(okparse json_test ${samples_ok})
 ADD_TEST(badparse failure_test ${samples_bad})
+ADD_TEST(apitest api_test)
 ADD_TEST(jsonpointer jpr_test)
 ADD_TEST(unescape unescape)
 ADD_TEST(cxxtest cxxtest)
