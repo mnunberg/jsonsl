@@ -51,6 +51,7 @@ doc-html/
 
 # Tests
 tests/jpr_test
+tests/api_test
 tests/json_test
 tests/unescape
 tests/cxxtest

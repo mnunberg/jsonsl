@@ -1,7 +1,8 @@
-TESTMODS= json_test jpr_test unescape cxxtest
+TESTMODS= json_test api_test jpr_test unescape cxxtest
 
 all: $(TESTMODS)
 	./json_test ../share/*
+	./api_test
 	./jpr_test
 	./unescape
 	./json_test ../share/jsc/pass*.json
