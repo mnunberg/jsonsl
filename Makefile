@@ -13,12 +13,12 @@ endif
 LIBJSONSL_DIR+=$(shell pwd)
 LDFLAGS+=-L$(LIBJSONSL_DIR) -Wl,-rpath $(LIBJSONSL_DIR)
 CFLAGS+=\
-	   -Wall -std=gnu89 -pedantic \
-	   -O3 $(GCCFLAGS) \
-	   -I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC \
+	-Wall -Wextra -std=c89 -pedantic \
+	-O3 $(GCCFLAGS) \
+	-I$(LIBJSONSL_DIR) -DJSONSL_STATE_GENERIC \
 
 CXXFLAGS+=\
-		  -Wall -std=c++03 -pedantic -O3 -I$(LIBJSONSL_DIR)
+	-Wall -Wextra -std=c++03 -pedantic -O3 -I$(LIBJSONSL_DIR)
 
 export CFLAGS
 export LDFLAGS
@@ -95,6 +95,7 @@ clean:
 distclean: clean
 	rm -rf share doc *.out
 
-dist:
-	-rm -f jsonsl.tar.gz
+dist: jsonsl.tar.gz
+
+jsonsl.tar.gz:
 	xargs < MANIFEST tar czf jsonsl.tar.gz
