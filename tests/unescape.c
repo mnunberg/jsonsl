@@ -35,7 +35,8 @@ void test_null_escape(void)
     strtable['u'] = 1;
     out = malloc(strlen(escaped)+1);
     res = jsonsl_util_unescape(escaped, out, strlen(escaped), strtable, &err);
-    assert(res == 0);
+    assert(res == 1);
+    assert(out[0] == '\0');
     free(out);
 }
 
@@ -127,7 +128,8 @@ void test_unicode_escape(void)
     escaped = "\\u0000";
     memset(out_s, 0, sizeof out_s);
     res = jsonsl_util_unescape(escaped, out_s, strlen(escaped), strtable, &err);
-    assert(err == JSONSL_ERROR_INVALID_CODEPOINT);
+    assert(res == 1);
+    assert(out_s[0] == '\0');
 
     /* Try with a surrogate pair */
     escaped = "\\uD834\\uDD1E";
