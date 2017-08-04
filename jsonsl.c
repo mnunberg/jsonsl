@@ -922,7 +922,7 @@ jsonsl_jpr_new(const char *path, jsonsl_error_t *errp)
         char *cur = my_copy;
         int pathret = JSONSL_PATH_STRING;
         curidx = 1;
-        while (pathret > 0 && curidx < count) {
+        while (curidx < count) {
             pathret = populate_component(cur, components + curidx, &cur, errp);
             if (pathret > 0) {
                 curidx++;
