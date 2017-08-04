@@ -1359,8 +1359,7 @@ size_t jsonsl_util_unescape_ex(const char *in,
                 c[1] != '\\' && c[1] != '"')) {
             /* if we don't want to unescape this string, write the escape sequence to the output */
             *out++ = *c++;
-            if (--len == 0)
-                break;
+            --len;
             goto GT_ASSIGN;
         }
 
