@@ -49,7 +49,7 @@ void state_callback(jsonsl_t jsn,
             */
     /*
     if (action == JSONSL_ACTION_POP) {
-        size_t state_len = state->pos_cur - state->pos_begin;
+        size_t state_len = jsn->pos - state->pos_begin;
     }
     */
 }

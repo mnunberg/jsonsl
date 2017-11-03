@@ -130,9 +130,9 @@ static void pop_callback(jsonsl_t jsn,
 {
     struct lexer_global_st *global = (struct lexer_global_st*)jsn->data;
     if (state->type == JSONSL_T_HKEY) {
-        global->hkey = at - (state->pos_cur - state->pos_begin);
+        global->hkey = at - (jsn->pos - state->pos_begin);
         global->hkey++;
-        global->nhkey = (state->pos_cur - state->pos_begin)-1;
+        global->nhkey = (jsn->pos - state->pos_begin)-1;
         printf("Got key..");
         fwrite(global->hkey, 1,  global->nhkey, stdout);
         printf("\n");

@@ -121,7 +121,7 @@ dump_action_state(jsonsl_t jsn,
                   struct jsonsl_state_st *state)
 {
     int ii;
-    size_t pos = (action == JSONSL_ACTION_POP) ? state->pos_cur : state->pos_begin;
+    size_t pos = (action == JSONSL_ACTION_POP) ? jsn->pos : state->pos_begin;
     if (!DumpProgress) {
         return;
     }

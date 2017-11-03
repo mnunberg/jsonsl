@@ -75,12 +75,12 @@ pop_callback(jsonsl_t jsn,
 
     if (state->type == JSONSL_T_HKEY) {
         ctx->key = ctx->buf + state->pos_begin + 1;
-        ctx->nkey = state->pos_cur - state->pos_begin - 1;
+        ctx->nkey = jsn->pos - state->pos_begin - 1;
         return;
     }
 
     if (ctx->match_status == JSONSL_MATCH_COMPLETE) {
-        ctx->match_end = state->pos_cur;
+        ctx->match_end = jsn->pos;
         jsonsl_stop(jsn);
     }
 }
