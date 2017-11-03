@@ -212,7 +212,7 @@ make sense of these variables, you must do one of two things
 
 =item Buffer the entire stream (simpler, but not recommended)
 
-This way, the offsets declared in the C<pos_cur> and C<pos_begin> variables can
+This way, the offsets declared in the C<< jsn->pos >> and C<pos_begin> variables can
 be directly applied as offsets to the actual buffer.
 
 Of course this is not the recommended option; since C<jsonsl> is a streaming
@@ -242,12 +242,12 @@ Allow callbacks to request an advancement of the position. This means
 that your context object contains a "min_needed" variable. For example,
 one might have a C<PUSH> callback for the beginning of a string. The push
 callback will set the C<min_needed> variable to the position
-of the beginning of the string (i.e. C<<<state->pos_begin>>>). In a corresponding
+of the beginning of the string (i.e. C<< state->pos_begin >>). In a corresponding
 C<POP> callback, the string is read from an internal buffer (whose first valid
-position is no greater than C<<<state->pos_begin>>>) with a length of 
-C<<<state->pos_cur - state->pos_begin>>> bytes. Once the string is read, it is
+position is no greater than C<< state->pos_begin >>) with a length of 
+C<< jsn->pos - state->pos_begin >> bytes. Once the string is read, it is
 no longer needed, and the callback then updates the C<min_needed> variable
-to the state's C<pos_cur>.
+to the parser's C<pos>.
 
 =item *
 
@@ -296,9 +296,9 @@ of the C<ctx>.
 =head2 Notes on String States
 
 It is possible to get the I<length> of a string by getting the difference
-between its two C<pos> variables (i.e. C<pos_begin> and C<pos_cur>). However
+between its state's C<pos_begin> and the parser's C<pos> variable.
 it should be noted that the C<pos_begin> points to the position of the
-opening C<"> (quote) and the C<pos_end> points to the position of the
+opening C<"> (quote) and the C<pos> points to the position of the
 closing C<"> (quote). Thus to get the actual raw string, one must
 increase the buffer pointer and decrease the length.
 
@@ -307,7 +307,7 @@ The logic may be encapsulated in a macro
     #define NORMALIZE_OFFSETS(buf, len) (buf)++; (len)++;
     /* use it */
     char *buf = get_state_buffer(ctx, state);
-    size_t len = state->pos_cur - state->pos_begin;
+    size_t len = jsn->pos - state->pos_begin;
     NORMALIZE_OFFSETS(buf, len);
 
 Note that care should be taken not to perform this on I<literals> like numbers,
