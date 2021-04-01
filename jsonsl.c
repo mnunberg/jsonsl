@@ -282,13 +282,20 @@ jsonsl_feed(jsonsl_t jsn, const jsonsl_char_t *bytes, size_t nbytes)
         INVOKE_ERROR(HKEY_EXPECTED); \
     }
 
+    /**
+     * The VERIFY_SPECIAL appends a ',' to the literal string in order
+     * to prevent a buffer overflow. It is actually not possible for CUR_CHAR
+     * to match a ',' -- as this is part of the is_special_end() set of
+     * characters.
+     */
+
 #define VERIFY_SPECIAL(lit) \
-        if (CUR_CHAR != (lit)[jsn->pos - state->pos_begin]) { \
+        if (CUR_CHAR != (lit",")[jsn->pos - state->pos_begin]) { \
             INVOKE_ERROR(SPECIAL_EXPECTED); \
         }
 
 #define VERIFY_SPECIAL_CI(lit) \
-        if (tolower(CUR_CHAR) != (lit)[jsn->pos - state->pos_begin]) { \
+        if (tolower(CUR_CHAR) != (lit",")[jsn->pos - state->pos_begin]) { \
             INVOKE_ERROR(SPECIAL_EXPECTED); \
         }
 
